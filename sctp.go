@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -276,6 +277,37 @@ func (a *SCTPAddr) String() string {
 }
 
 func (a *SCTPAddr) Network() string { return "sctp" }
+
+func ResolveSCTPAddr(network, addrs string) (*SCTPAddr, error) {
+	tcpnet := ""
+	switch network {
+	case "sctp4":
+		tcpnet = "tcp4"
+	case "sctp6":
+		tcpnet = "tcp6"
+	}
+	elems := strings.Split(addrs, "/")
+	if len(elems) == 0 {
+		return nil, fmt.Errorf("invalid input: %s", addrs)
+	}
+	ipaddrs := make([]net.IP, 0, len(elems))
+	for _, e := range elems[:len(elems)-1] {
+		tcpa, err := net.ResolveTCPAddr(tcpnet, e+":")
+		if err != nil {
+			return nil, err
+		}
+		ipaddrs = append(ipaddrs, tcpa.IP)
+	}
+	tcpa, err := net.ResolveTCPAddr(tcpnet, elems[len(elems)-1])
+	if err != nil {
+		return nil, err
+	}
+	ipaddrs = append(ipaddrs, tcpa.IP)
+	return &SCTPAddr{
+		IP:   ipaddrs,
+		Port: tcpa.Port,
+	}, nil
+}
 
 func SCTPConnect(fd int, addr *SCTPAddr) (int, error) {
 	buf := addr.ToRawSockAddrBuf()
