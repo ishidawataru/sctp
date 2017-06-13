@@ -496,7 +496,8 @@ func resolveFromRawAddr(ptr unsafe.Pointer, n int) (*SCTPAddr, error) {
 
 	switch family := (*(*syscall.RawSockaddrAny)(ptr)).Addr.Family; family {
 	case syscall.AF_INET:
-		addr.Port = int((*(*syscall.RawSockaddrInet4)(ptr)).Port)
+		p := int((*(*syscall.RawSockaddrInet4)(ptr)).Port)
+		addr.Port = (p << 8 & 0xff00) | (p >> 8 & 0xff)
 		tmp := syscall.RawSockaddrInet4{}
 		size := unsafe.Sizeof(tmp)
 		for i := 0; i < n; i++ {
@@ -505,7 +506,8 @@ func resolveFromRawAddr(ptr unsafe.Pointer, n int) (*SCTPAddr, error) {
 			addr.IP[i] = a.Addr[:]
 		}
 	case syscall.AF_INET6:
-		addr.Port = int((*(*syscall.RawSockaddrInet6)(ptr)).Port)
+		p := int((*(*syscall.RawSockaddrInet6)(ptr)).Port)
+		addr.Port = (p << 8 & 0xff00) | (p >> 8 & 0xff)
 		tmp := syscall.RawSockaddrInet6{}
 		size := unsafe.Sizeof(tmp)
 		for i := 0; i < n; i++ {
