@@ -114,6 +114,10 @@ const (
 	SCTP_EOF
 )
 
+const (
+	SCTP_MAX_STREAM = 0xffff
+)
+
 type InitMsg struct {
 	NumOstreams    uint16
 	MaxInstreams   uint16
@@ -210,6 +214,15 @@ func getsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, erro
 		return r0, r1, errno
 	}
 	return r0, r1, nil
+}
+
+func setNumOstreams(fd, num int) error {
+	param := InitMsg{
+		NumOstreams: uint16(num),
+	}
+	optlen := unsafe.Sizeof(param)
+	_, _, err := setsockopt(fd, SCTP_INITMSG, uintptr(unsafe.Pointer(&param)), uintptr(optlen))
+	return err
 }
 
 type SCTPAddr struct {
@@ -613,7 +626,7 @@ func ListenSCTP(net string, laddr *SCTPAddr) (*SCTPListener, error) {
 	if err != nil {
 		return nil, err
 	}
-	sock, err = syscall.Dup(sock)
+	err = setNumOstreams(sock, SCTP_MAX_STREAM)
 	if err != nil {
 		return nil, err
 	}
@@ -678,6 +691,10 @@ func DialSCTP(net string, laddr, raddr *SCTPAddr) (*SCTPConn, error) {
 		syscall.SOCK_STREAM,
 		syscall.IPPROTO_SCTP,
 	)
+	if err != nil {
+		return nil, err
+	}
+	err = setNumOstreams(sock, SCTP_MAX_STREAM)
 	if err != nil {
 		return nil, err
 	}
