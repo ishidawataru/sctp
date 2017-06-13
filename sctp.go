@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -613,13 +614,37 @@ func (c *SCTPConn) SetWriteDeadline(t time.Time) error {
 }
 
 type SCTPListener struct {
-	fd    int
-	laddr *SCTPAddr
+	fd int
+	m  sync.Mutex
 }
 
 func ListenSCTP(net string, laddr *SCTPAddr) (*SCTPListener, error) {
+	af := syscall.AF_INET
+	switch net {
+	case "sctp":
+		hasv6 := func(addr *SCTPAddr) bool {
+			if addr == nil {
+				return false
+			}
+			for _, ip := range addr.IP {
+				if ip.To4() == nil {
+					return true
+				}
+			}
+			return false
+		}
+		if hasv6(laddr) {
+			af = syscall.AF_INET6
+		}
+	case "sctp4":
+	case "sctp6":
+		af = syscall.AF_INET6
+	default:
+		return nil, fmt.Errorf("invalid net: %s", net)
+	}
+
 	sock, err := syscall.Socket(
-		syscall.AF_INET,
+		af,
 		syscall.SOCK_STREAM,
 		syscall.IPPROTO_SCTP,
 	)
@@ -630,7 +655,7 @@ func ListenSCTP(net string, laddr *SCTPAddr) (*SCTPListener, error) {
 	if err != nil {
 		return nil, err
 	}
-	if laddr != nil {
+	if laddr != nil && len(laddr.IP) != 0 {
 		err := SCTPBind(sock, laddr, SCTP_BINDX_ADD_ADDR)
 		if err != nil {
 			return nil, err
@@ -641,25 +666,28 @@ func ListenSCTP(net string, laddr *SCTPAddr) (*SCTPListener, error) {
 		return nil, err
 	}
 	return &SCTPListener{
-		fd:    sock,
-		laddr: laddr,
+		fd: sock,
 	}, nil
 }
 
 func (ln *SCTPListener) Accept() (net.Conn, error) {
+	ln.m.Lock()
+	defer ln.m.Unlock()
 	fd, _, err := syscall.Accept4(ln.fd, 0)
-	if err != nil {
-		return nil, err
-	}
-	return NewSCTPConn(fd, nil), nil
+	return NewSCTPConn(fd, nil), err
 }
 
 func (ln *SCTPListener) Close() error {
+	syscall.Shutdown(ln.fd, syscall.SHUT_RDWR)
 	return syscall.Close(ln.fd)
 }
 
 func (ln *SCTPListener) Addr() net.Addr {
-	return ln.laddr
+	laddr, err := sctpGetAddrs(ln.fd, 0, SCTP_GET_LOCAL_ADDRS)
+	if err != nil {
+		return nil
+	}
+	return laddr
 }
 
 func DialSCTP(net string, laddr, raddr *SCTPAddr) (*SCTPConn, error) {
@@ -715,7 +743,7 @@ type SCTPSndRcvInfoWrappedConn struct {
 	conn *SCTPConn
 }
 
-func NewSCTPSndRecvInfoWrappedConn(conn *SCTPConn) *SCTPSndRcvInfoWrappedConn {
+func NewSCTPSndRcvInfoWrappedConn(conn *SCTPConn) *SCTPSndRcvInfoWrappedConn {
 	conn.SubscribeEvents(SCTP_EVENT_DATA_IO)
 	return &SCTPSndRcvInfoWrappedConn{conn}
 }
