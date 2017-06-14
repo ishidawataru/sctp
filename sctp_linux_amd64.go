@@ -145,7 +145,7 @@ func ListenSCTP(net string, laddr *SCTPAddr) (*SCTPListener, error) {
 			return nil, err
 		}
 	}
-	err = syscall.Listen(sock, 5)
+	err = syscall.Listen(sock, syscall.SOMAXCONN)
 	if err != nil {
 		return nil, err
 	}
