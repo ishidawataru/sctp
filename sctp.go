@@ -289,10 +289,13 @@ func (a *SCTPAddr) Network() string { return "sctp" }
 func ResolveSCTPAddr(network, addrs string) (*SCTPAddr, error) {
 	tcpnet := ""
 	switch network {
+	case "", "sctp":
 	case "sctp4":
 		tcpnet = "tcp4"
 	case "sctp6":
 		tcpnet = "tcp6"
+	default:
+		return nil, fmt.Errorf("invalid net: %s", network)
 	}
 	elems := strings.Split(addrs, "/")
 	if len(elems) == 0 {
