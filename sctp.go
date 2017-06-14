@@ -247,6 +247,9 @@ func (a *SCTPAddr) String() string {
 			b.WriteRune(']')
 		}
 	}
+	if len(a.IP) == 0 {
+		b.WriteRune('/')
+	}
 	b.WriteRune(':')
 	b.WriteString(strconv.Itoa(a.Port))
 
@@ -282,7 +285,11 @@ func ResolveSCTPAddr(network, addrs string) (*SCTPAddr, error) {
 	if err != nil {
 		return nil, err
 	}
-	ipaddrs = append(ipaddrs, tcpa.IP)
+	if tcpa.IP != nil {
+		ipaddrs = append(ipaddrs, tcpa.IP)
+	} else {
+		ipaddrs = nil
+	}
 	return &SCTPAddr{
 		IP:   ipaddrs,
 		Port: tcpa.Port,
