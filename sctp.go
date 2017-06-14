@@ -800,7 +800,7 @@ func (c *SCTPSndRcvInfoWrappedConn) Write(b []byte) (int, error) {
 
 func (c *SCTPSndRcvInfoWrappedConn) Read(b []byte) (int, error) {
 	if len(b) < int(sndRcvInfoSize) {
-		return 0, syscall.ENOMEM
+		return 0, syscall.EINVAL
 	}
 	n, info, err := c.conn.SCTPRead(b[sndRcvInfoSize:])
 	if err != nil {
