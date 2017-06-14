@@ -190,6 +190,15 @@ func toBuf(v interface{}) []byte {
 	return buf.Bytes()
 }
 
+func htons(h uint16) uint16 {
+	if nativeEndian == binary.LittleEndian {
+		return (h << 8 & 0xff00) | (h >> 8 & 0xff)
+	}
+	return h
+}
+
+var ntohs = htons
+
 func setsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, error) {
 	r0, r1, errno := syscall.Syscall6(syscall.SYS_SETSOCKOPT,
 		uintptr(fd),
@@ -234,8 +243,7 @@ type SCTPAddr struct {
 
 func (a *SCTPAddr) ToRawSockAddrBuf() []byte {
 	buf := []byte{}
-	p := uint16(a.Port<<8) & 0xff00
-	p |= uint16(a.Port >> 8)
+	p := htons(uint16(a.Port))
 	for _, ip := range a.IP {
 		if ip.To4() != nil {
 			s := syscall.RawSockaddrInet4{
@@ -542,8 +550,7 @@ func resolveFromRawAddr(ptr unsafe.Pointer, n int) (*SCTPAddr, error) {
 
 	switch family := (*(*syscall.RawSockaddrAny)(ptr)).Addr.Family; family {
 	case syscall.AF_INET:
-		p := int((*(*syscall.RawSockaddrInet4)(ptr)).Port)
-		addr.Port = (p << 8 & 0xff00) | (p >> 8 & 0xff)
+		addr.Port = int(ntohs(uint16((*(*syscall.RawSockaddrInet4)(ptr)).Port)))
 		tmp := syscall.RawSockaddrInet4{}
 		size := unsafe.Sizeof(tmp)
 		for i := 0; i < n; i++ {
@@ -552,8 +559,7 @@ func resolveFromRawAddr(ptr unsafe.Pointer, n int) (*SCTPAddr, error) {
 			addr.IP[i] = a.Addr[:]
 		}
 	case syscall.AF_INET6:
-		p := int((*(*syscall.RawSockaddrInet6)(ptr)).Port)
-		addr.Port = (p << 8 & 0xff00) | (p >> 8 & 0xff)
+		addr.Port = int(ntohs(uint16((*(*syscall.RawSockaddrInet4)(ptr)).Port)))
 		tmp := syscall.RawSockaddrInet6{}
 		size := unsafe.Sizeof(tmp)
 		for i := 0; i < n; i++ {
