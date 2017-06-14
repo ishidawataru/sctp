@@ -3,6 +3,8 @@ package sctp
 import (
 	"net"
 	"reflect"
+	"runtime"
+	"sync"
 	"testing"
 )
 
@@ -39,5 +41,68 @@ func TestResolveSCTPAddr(t *testing.T) {
 				t.Errorf("(%q, %q): ResolveSCTPAddr(%q, %q) = %#v, %v, want %#v, %v", tt.network, tt.litAddrOrName, addr.Network(), addr.String(), addr2, err, tt.addr, tt.err)
 			}
 		}
+	}
+}
+
+var sctpListenerNameTests = []struct {
+	net   string
+	laddr *SCTPAddr
+}{
+	{"sctp4", &SCTPAddr{IP: []net.IP{net.IPv4(127, 0, 0, 1)}}},
+	{"sctp4", &SCTPAddr{}},
+	{"sctp4", nil},
+}
+
+func TestSCTPListenerName(t *testing.T) {
+	for _, tt := range sctpListenerNameTests {
+		ln, err := ListenSCTP(tt.net, tt.laddr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ln.Close()
+		la := ln.Addr()
+		if a, ok := la.(*SCTPAddr); !ok || a.Port == 0 {
+			t.Fatalf("got %v; expected a proper address with non-zero port number", la)
+		}
+	}
+}
+
+func TestSCTPConcurrentAccept(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(4))
+	addr, _ := ResolveSCTPAddr("sctp", "127.0.0.1:0")
+	ln, err := ListenSCTP("sctp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const N = 10
+	var wg sync.WaitGroup
+	wg.Add(N)
+	for i := 0; i < N; i++ {
+		go func() {
+			for {
+				c, err := ln.Accept()
+				if err != nil {
+					break
+				}
+				c.Close()
+			}
+			wg.Done()
+		}()
+	}
+	attempts := 10 * N
+	fails := 0
+	for i := 0; i < attempts; i++ {
+		c, err := DialSCTP("sctp", nil, ln.Addr().(*SCTPAddr))
+		if err != nil {
+			fails++
+		} else {
+			c.Close()
+		}
+	}
+	ln.Close()
+	// BUG Accept() doesn't return even if we closed ln
+	//	wg.Wait()
+	if fails > 0 {
+		t.Fatalf("# of failed Dials: %v", fails)
 	}
 }
