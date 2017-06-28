@@ -1,4 +1,4 @@
-// +build amd64,linux
+// +build linux,!386
 
 package sctp
 
@@ -11,6 +11,7 @@ import (
 )
 
 func setsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, error) {
+	// FIXME: syscall.SYS_SETSOCKOPT is undefined on 386
 	r0, r1, errno := syscall.Syscall6(syscall.SYS_SETSOCKOPT,
 		uintptr(fd),
 		SOL_SCTP,
@@ -25,6 +26,7 @@ func setsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, erro
 }
 
 func getsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, error) {
+	// FIXME: syscall.SYS_GETSOCKOPT is undefined on 386
 	r0, r1, errno := syscall.Syscall6(syscall.SYS_GETSOCKOPT,
 		uintptr(fd),
 		SOL_SCTP,
@@ -43,10 +45,13 @@ func (c *SCTPConn) SCTPWrite(b []byte, info *SndRcvInfo) (int, error) {
 	if info != nil {
 		cmsgBuf := toBuf(info)
 		hdr := &syscall.Cmsghdr{
-			Len:   uint64(syscall.CmsgSpace(len(cmsgBuf))),
 			Level: syscall.IPPROTO_SCTP,
 			Type:  SCTP_CMSG_SNDRCV,
 		}
+
+		// bitwidth of hdr.Len is platform-specific,
+		// so we use hdr.SetLen() rather than directly setting hdr.Len
+		hdr.SetLen(syscall.CmsgSpace(len(cmsgBuf)))
 		cbuf = append(toBuf(hdr), cmsgBuf...)
 	}
 	return syscall.SendmsgN(c.fd, b, cbuf, nil, 0)

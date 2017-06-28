@@ -1,4 +1,4 @@
-// +build !amd64,linux !linux
+// +build !linux linux,386
 
 package sctp
 
