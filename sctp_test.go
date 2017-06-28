@@ -1,11 +1,13 @@
 package sctp
 
 import (
+	"io"
 	"net"
 	"reflect"
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 )
 
 type resolveSCTPAddrTest struct {
@@ -105,4 +107,43 @@ func TestSCTPConcurrentAccept(t *testing.T) {
 	if fails > 0 {
 		t.Fatalf("# of failed Dials: %v", fails)
 	}
+}
+
+func TestSCTPCloseRecv(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(4))
+	addr, _ := ResolveSCTPAddr("sctp", "127.0.0.1:0")
+	ln, err := ListenSCTP("sctp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var conn net.Conn
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		conn, err = ln.Accept()
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf := make([]byte, 256)
+		_, err = conn.Read(buf)
+		if err != io.EOF {
+			t.Fatalf("read failed: %v", err)
+		}
+		wg.Done()
+
+	}()
+
+	_, err = DialSCTP("sctp", nil, ln.Addr().(*SCTPAddr))
+	if err != nil {
+		t.Fatalf("failed to dial: %s", err)
+	}
+
+	// wait conn gets ready
+	time.Sleep(time.Second)
+
+	err = conn.Close()
+	if err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+	wg.Wait()
 }

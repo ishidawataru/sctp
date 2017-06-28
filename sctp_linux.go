@@ -104,6 +104,7 @@ func (c *SCTPConn) Close() error {
 		Flags: SCTP_EOF,
 	}
 	c.SCTPWrite(nil, info)
+	syscall.Shutdown(c.fd, syscall.SHUT_RDWR)
 	return syscall.Close(c.fd)
 }
 
