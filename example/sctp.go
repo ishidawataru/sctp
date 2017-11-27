@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/ishidawataru/sctp"
@@ -30,8 +31,14 @@ func main() {
 	var port = flag.Int("port", 0, "")
 	flag.Parse()
 
+	ips := []net.IP{}
+
+	for _, i := range strings.Split(*ip, ",") {
+		ips = append(ips, net.ParseIP(i))
+	}
+
 	addr := &sctp.SCTPAddr{
-		IP:   []net.IP{net.ParseIP(*ip)},
+		IP:   ips,
 		Port: *port,
 	}
 
