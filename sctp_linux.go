@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 )
@@ -54,7 +55,7 @@ func (c *SCTPConn) SCTPWrite(b []byte, info *SndRcvInfo) (int, error) {
 		hdr.SetLen(syscall.CmsgSpace(len(cmsgBuf)))
 		cbuf = append(toBuf(hdr), cmsgBuf...)
 	}
-	return syscall.SendmsgN(c.fd, b, cbuf, nil, 0)
+	return syscall.SendmsgN(c.fd(), b, cbuf, nil, 0)
 }
 
 func parseSndRcvInfo(b []byte) (*SndRcvInfo, error) {
@@ -76,7 +77,7 @@ func parseSndRcvInfo(b []byte) (*SndRcvInfo, error) {
 func (c *SCTPConn) SCTPRead(b []byte) (int, *SndRcvInfo, error) {
 	oob := make([]byte, 254)
 	for {
-		n, oobn, recvflags, _, err := syscall.Recvmsg(c.fd, b, oob, 0)
+		n, oobn, recvflags, _, err := syscall.Recvmsg(c.fd(), b, oob, 0)
 		if err != nil {
 			return n, nil, err
 		}
@@ -100,12 +101,18 @@ func (c *SCTPConn) SCTPRead(b []byte) (int, *SndRcvInfo, error) {
 }
 
 func (c *SCTPConn) Close() error {
-	info := &SndRcvInfo{
-		Flags: SCTP_EOF,
+	if c != nil {
+		fd := atomic.SwapInt32(&c._fd, -1)
+		if fd > 0 {
+			info := &SndRcvInfo{
+				Flags: SCTP_EOF,
+			}
+			c.SCTPWrite(nil, info)
+			syscall.Shutdown(int(fd), syscall.SHUT_RDWR)
+			return syscall.Close(int(fd))
+		}
 	}
-	c.SCTPWrite(nil, info)
-	syscall.Shutdown(c.fd, syscall.SHUT_RDWR)
-	return syscall.Close(c.fd)
+	return syscall.EBADF
 }
 
 func ListenSCTP(net string, laddr *SCTPAddr) (*SCTPListener, error) {

@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+const (
+	STREAM_TEST_CLIENTS = 128
+	STREAM_TEST_STREAMS = 11
+)
+
 func TestStreams(t *testing.T) {
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -15,7 +20,7 @@ func TestStreams(t *testing.T) {
 		const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 		result := make([]byte, strlen)
 		for i := range result {
-		result[i] = chars[r.Intn(len(chars))]
+			result[i] = chars[r.Intn(len(chars))]
 		}
 		return string(result)
 	}
@@ -68,7 +73,7 @@ func TestStreams(t *testing.T) {
 
 	wait := make(chan struct{})
 	i := 0
-	for ; i < 128; i++ {
+	for ; i < STREAM_TEST_CLIENTS; i++ {
 		go func(test int) {
 			defer func() { wait <- struct{}{} }()
 			conn, err := DialSCTP("sctp", nil, addr)
@@ -78,7 +83,7 @@ func TestStreams(t *testing.T) {
 			}
 			defer conn.Close()
 			conn.SubscribeEvents(SCTP_EVENT_DATA_IO)
-			for ppid := uint16(0); ppid < 11; ppid++ {
+			for ppid := uint16(0); ppid < STREAM_TEST_STREAMS; ppid++ {
 				info := &SndRcvInfo{
 					Stream: uint16(ppid),
 					PPID:   uint32(ppid),
@@ -127,4 +132,3 @@ func TestStreams(t *testing.T) {
 		}
 	}
 }
-
