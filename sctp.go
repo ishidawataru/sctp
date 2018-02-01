@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -330,13 +331,17 @@ func SCTPBind(fd int, addr *SCTPAddr, flags int) error {
 }
 
 type SCTPConn struct {
-	fd                  int
+	_fd                 int32
 	notificationHandler NotificationHandler
+}
+
+func (c *SCTPConn) fd() int {
+	return int(atomic.LoadInt32(&c._fd))
 }
 
 func NewSCTPConn(fd int, handler NotificationHandler) *SCTPConn {
 	conn := &SCTPConn{
-		fd:                  fd,
+		_fd:                 int32(fd),
 		notificationHandler: handler,
 	}
 	return conn
@@ -348,6 +353,9 @@ func (c *SCTPConn) Write(b []byte) (int, error) {
 
 func (c *SCTPConn) Read(b []byte) (int, error) {
 	n, _, err := c.SCTPRead(b)
+	if n < 0 {
+		n = 0
+	}
 	return n, err
 }
 
@@ -359,7 +367,7 @@ func (c *SCTPConn) SetInitMsg(numOstreams, maxInstreams, maxAttempts, maxInitTim
 		MaxInitTimeout: uint16(maxInitTimeout),
 	}
 	optlen := unsafe.Sizeof(param)
-	_, _, err := setsockopt(c.fd, SCTP_INITMSG, uintptr(unsafe.Pointer(&param)), uintptr(optlen))
+	_, _, err := setsockopt(c.fd(), SCTP_INITMSG, uintptr(unsafe.Pointer(&param)), uintptr(optlen))
 	return err
 }
 
@@ -408,14 +416,14 @@ func (c *SCTPConn) SubscribeEvents(flags int) error {
 		SenderDry:       se,
 	}
 	optlen := unsafe.Sizeof(param)
-	_, _, err := setsockopt(c.fd, SCTP_EVENTS, uintptr(unsafe.Pointer(&param)), uintptr(optlen))
+	_, _, err := setsockopt(c.fd(), SCTP_EVENTS, uintptr(unsafe.Pointer(&param)), uintptr(optlen))
 	return err
 }
 
 func (c *SCTPConn) SubscribedEvents() (int, error) {
 	param := EventSubscribe{}
 	optlen := unsafe.Sizeof(param)
-	_, _, err := getsockopt(c.fd, SCTP_EVENTS, uintptr(unsafe.Pointer(&param)), uintptr(unsafe.Pointer(&optlen)))
+	_, _, err := getsockopt(c.fd(), SCTP_EVENTS, uintptr(unsafe.Pointer(&param)), uintptr(unsafe.Pointer(&optlen)))
 	if err != nil {
 		return 0, err
 	}
@@ -455,14 +463,14 @@ func (c *SCTPConn) SubscribedEvents() (int, error) {
 
 func (c *SCTPConn) SetDefaultSentParam(info *SndRcvInfo) error {
 	optlen := unsafe.Sizeof(*info)
-	_, _, err := setsockopt(c.fd, SCTP_DEFAULT_SENT_PARAM, uintptr(unsafe.Pointer(info)), uintptr(optlen))
+	_, _, err := setsockopt(c.fd(), SCTP_DEFAULT_SENT_PARAM, uintptr(unsafe.Pointer(info)), uintptr(optlen))
 	return err
 }
 
 func (c *SCTPConn) GetDefaultSentParam() (*SndRcvInfo, error) {
 	info := &SndRcvInfo{}
 	optlen := unsafe.Sizeof(*info)
-	_, _, err := getsockopt(c.fd, SCTP_DEFAULT_SENT_PARAM, uintptr(unsafe.Pointer(info)), uintptr(unsafe.Pointer(&optlen)))
+	_, _, err := getsockopt(c.fd(), SCTP_DEFAULT_SENT_PARAM, uintptr(unsafe.Pointer(info)), uintptr(unsafe.Pointer(&optlen)))
 	return info, err
 }
 
@@ -514,16 +522,33 @@ func sctpGetAddrs(fd, id, optname int) (*SCTPAddr, error) {
 	return resolveFromRawAddr(unsafe.Pointer(&param.addrs), int(param.addrNum))
 }
 
+func (c *SCTPConn) SCTPGetPrimaryPeerAddr() (*SCTPAddr, error) {
+
+	type sctpGetSetPrim struct {
+		assocId int32
+		addrs   [128]byte
+	}
+	param := sctpGetSetPrim{
+		assocId: int32(0),
+	}
+	optlen := unsafe.Sizeof(param)
+	_, _, err := getsockopt(c.fd(), SCTP_PRIMARY_ADDR, uintptr(unsafe.Pointer(&param)), uintptr(unsafe.Pointer(&optlen)))
+	if err != nil {
+		return nil, err
+	}
+	return resolveFromRawAddr(unsafe.Pointer(&param.addrs), 1)
+}
+
 func (c *SCTPConn) SCTPLocalAddr(id int) (*SCTPAddr, error) {
-	return sctpGetAddrs(c.fd, id, SCTP_GET_LOCAL_ADDRS)
+	return sctpGetAddrs(c.fd(), id, SCTP_GET_LOCAL_ADDRS)
 }
 
 func (c *SCTPConn) SCTPRemoteAddr(id int) (*SCTPAddr, error) {
-	return sctpGetAddrs(c.fd, id, SCTP_GET_PEER_ADDRS)
+	return sctpGetAddrs(c.fd(), id, SCTP_GET_PEER_ADDRS)
 }
 
 func (c *SCTPConn) LocalAddr() net.Addr {
-	addr, err := sctpGetAddrs(c.fd, 0, SCTP_GET_LOCAL_ADDRS)
+	addr, err := sctpGetAddrs(c.fd(), 0, SCTP_GET_LOCAL_ADDRS)
 	if err != nil {
 		return nil
 	}
@@ -531,7 +556,7 @@ func (c *SCTPConn) LocalAddr() net.Addr {
 }
 
 func (c *SCTPConn) RemoteAddr() net.Addr {
-	addr, err := sctpGetAddrs(c.fd, 0, SCTP_GET_PEER_ADDRS)
+	addr, err := sctpGetAddrs(c.fd(), 0, SCTP_GET_PEER_ADDRS)
 	if err != nil {
 		return nil
 	}
@@ -547,11 +572,11 @@ func (c *SCTPConn) PeelOff(id int) (*SCTPConn, error) {
 		assocId: int32(id),
 	}
 	optlen := unsafe.Sizeof(param)
-	_, _, err := getsockopt(c.fd, SCTP_SOCKOPT_PEELOFF, uintptr(unsafe.Pointer(&param)), uintptr(unsafe.Pointer(&optlen)))
+	_, _, err := getsockopt(c.fd(), SCTP_SOCKOPT_PEELOFF, uintptr(unsafe.Pointer(&param)), uintptr(unsafe.Pointer(&optlen)))
 	if err != nil {
 		return nil, err
 	}
-	return &SCTPConn{fd: param.sd}, nil
+	return &SCTPConn{_fd: int32(param.sd)}, nil
 }
 
 func (c *SCTPConn) SetDeadline(t time.Time) error {
