@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"sync"
 	"testing"
 	"time"
 )
@@ -14,14 +15,16 @@ const (
 )
 
 func TestStreams(t *testing.T) {
-
+	var rMu sync.Mutex
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	randomStr := func(strlen int) string {
 		const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 		result := make([]byte, strlen)
+		rMu.Lock()
 		for i := range result {
 			result[i] = chars[r.Intn(len(chars))]
 		}
+		rMu.Unlock()
 		return string(result)
 	}
 
