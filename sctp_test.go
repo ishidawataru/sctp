@@ -30,6 +30,15 @@ var resolveSCTPAddrTests = []resolveSCTPAddrTest{
 	{"sctp4", "127.0.0.1/10.0.0.1:65535", &SCTPAddr{IP: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(10, 0, 0, 1)}, Port: 65535}, nil},
 }
 
+func TestSCTPAddrString(t *testing.T) {
+	for _, tt := range resolveSCTPAddrTests {
+		s := tt.addr.String()
+		if tt.litAddrOrName != s {
+			t.Errorf("expected %q, got %q", tt.litAddrOrName, s)
+		}
+	}
+}
+
 func TestResolveSCTPAddr(t *testing.T) {
 	for _, tt := range resolveSCTPAddrTests {
 		addr, err := ResolveSCTPAddr(tt.network, tt.litAddrOrName)
