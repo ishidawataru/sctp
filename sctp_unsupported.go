@@ -5,9 +5,10 @@ package sctp
 import (
 	"errors"
 	"net"
+	"runtime"
 )
 
-var ErrUnsupported = errors.New("operation unsupported")
+var ErrUnsupported = errors.New("SCTP is unsupported on " + runtime.GOOS + "/" + runtime.GOARCH)
 
 func setsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, error) {
 	return 0, 0, ErrUnsupported
