@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"sync"
 	"testing"
-	"time"
 )
 
 type resolveSCTPAddrTest struct {
@@ -118,19 +117,21 @@ func TestSCTPCloseRecv(t *testing.T) {
 	}
 	var conn net.Conn
 	var wg sync.WaitGroup
+	connReady := make(chan struct{}, 1)
 	wg.Add(1)
 	go func() {
-		conn, err = ln.Accept()
-		if err != nil {
-			t.Fatal(err)
+		var xerr error
+		conn, xerr = ln.Accept()
+		if xerr != nil {
+			t.Fatal(xerr)
 		}
+		connReady <- struct{}{}
 		buf := make([]byte, 256)
-		_, err = conn.Read(buf)
-		if err != io.EOF {
-			t.Fatalf("read failed: %v", err)
+		_, xerr = conn.Read(buf)
+		if xerr != io.EOF {
+			t.Fatalf("read failed: %v", xerr)
 		}
 		wg.Done()
-
 	}()
 
 	_, err = DialSCTP("sctp", nil, ln.Addr().(*SCTPAddr))
@@ -138,9 +139,7 @@ func TestSCTPCloseRecv(t *testing.T) {
 		t.Fatalf("failed to dial: %s", err)
 	}
 
-	// wait conn gets ready
-	time.Sleep(time.Second)
-
+	<-connReady
 	err = conn.Close()
 	if err != nil {
 		t.Fatalf("close failed: %v", err)
