@@ -168,8 +168,6 @@ func ListenSCTP(net string, laddr *SCTPAddr) (*SCTPListener, error) {
 }
 
 func (ln *SCTPListener) Accept() (net.Conn, error) {
-	ln.m.Lock()
-	defer ln.m.Unlock()
 	fd, _, err := syscall.Accept4(ln.fd, 0)
 	return NewSCTPConn(fd, nil), err
 }
