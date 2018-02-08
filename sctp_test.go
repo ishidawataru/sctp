@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"runtime"
 	"sync"
+	"syscall"
 	"testing"
 )
 
@@ -120,6 +121,7 @@ func TestSCTPCloseRecv(t *testing.T) {
 	connReady := make(chan struct{}, 1)
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		var xerr error
 		conn, xerr = ln.Accept()
 		if xerr != nil {
@@ -128,10 +130,10 @@ func TestSCTPCloseRecv(t *testing.T) {
 		connReady <- struct{}{}
 		buf := make([]byte, 256)
 		_, xerr = conn.Read(buf)
-		if xerr != io.EOF {
+		t.Logf("got error while read: %v", xerr)
+		if xerr != io.EOF && xerr != syscall.EBADF {
 			t.Fatalf("read failed: %v", xerr)
 		}
-		wg.Done()
 	}()
 
 	_, err = DialSCTP("sctp", nil, ln.Addr().(*SCTPAddr))
