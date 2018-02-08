@@ -91,7 +91,10 @@ func TestStreams(t *testing.T) {
 					Stream: uint16(ppid),
 					PPID:   uint32(ppid),
 				}
-				text := fmt.Sprintf("Test %s ***\n\t\t%d %d ***", randomStr(r.Intn(255)), test, ppid)
+				rMu.Lock()
+				randomLen := r.Intn(255)
+				rMu.Unlock()
+				text := fmt.Sprintf("Test %s ***\n\t\t%d %d ***", randomStr(randomLen), test, ppid)
 				n, err := conn.SCTPWrite([]byte(text), info)
 				if err != nil {
 					t.Errorf("failed to write %s, len: %d, err: %v, bytes written: %d", text, len(text), err, n)
