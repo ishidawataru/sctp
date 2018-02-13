@@ -239,22 +239,19 @@ func (a *SCTPAddr) String() string {
 
 	for n, i := range a.IP {
 		if a.IP[n].To4() != nil {
-			b.WriteRune('/')
 			b.WriteString(i.String())
 		} else if a.IP[n].To16() != nil {
-			b.WriteRune('/')
 			b.WriteRune('[')
 			b.WriteString(i.String())
 			b.WriteRune(']')
 		}
-	}
-	if len(a.IP) == 0 {
-		b.WriteRune('/')
+		if n < len(a.IP)-1 {
+			b.WriteRune('/')
+		}
 	}
 	b.WriteRune(':')
 	b.WriteString(strconv.Itoa(a.Port))
-
-	return b.String()[1:]
+	return b.String()
 }
 
 func (a *SCTPAddr) Network() string { return "sctp" }
