@@ -18,16 +18,19 @@ type resolveSCTPAddrTest struct {
 }
 
 var resolveSCTPAddrTests = []resolveSCTPAddrTest{
-	{"sctp", "127.0.0.1:0", &SCTPAddr{IP: []net.IP{net.IPv4(127, 0, 0, 1)}, Port: 0}, nil},
-	{"sctp4", "127.0.0.1:65535", &SCTPAddr{IP: []net.IP{net.IPv4(127, 0, 0, 1)}, Port: 65535}, nil},
+	{"sctp", "127.0.0.1:0", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}}, Port: 0}, nil},
+	{"sctp4", "127.0.0.1:65535", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}}, Port: 65535}, nil},
 
-	{"sctp", "[::1]:0", &SCTPAddr{IP: []net.IP{net.ParseIP("::1")}, Port: 0}, nil},
-	{"sctp6", "[::1]:65535", &SCTPAddr{IP: []net.IP{net.ParseIP("::1")}, Port: 65535}, nil},
+	{"sctp", "[::1]:0", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.ParseIP("::1")}}, Port: 0}, nil},
+	{"sctp6", "[::1]:65535", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.ParseIP("::1")}}, Port: 65535}, nil},
+
+	{"sctp", "[fe80::1%eth0]:0", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.ParseIP("fe80::1"), Zone: "eth0"}}, Port: 0}, nil},
+	{"sctp6", "[fe80::1%eth0]:65535", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.ParseIP("fe80::1"), Zone: "eth0"}}, Port: 65535}, nil},
 
 	{"sctp", ":12345", &SCTPAddr{Port: 12345}, nil},
 
-	{"sctp", "127.0.0.1/10.0.0.1:0", &SCTPAddr{IP: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(10, 0, 0, 1)}, Port: 0}, nil},
-	{"sctp4", "127.0.0.1/10.0.0.1:65535", &SCTPAddr{IP: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(10, 0, 0, 1)}, Port: 65535}, nil},
+	{"sctp", "127.0.0.1/10.0.0.1:0", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}, net.IPAddr{IP: net.IPv4(10, 0, 0, 1)}}, Port: 0}, nil},
+	{"sctp4", "127.0.0.1/10.0.0.1:65535", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}, net.IPAddr{IP: net.IPv4(10, 0, 0, 1)}}, Port: 65535}, nil},
 }
 
 func TestSCTPAddrString(t *testing.T) {
@@ -59,7 +62,7 @@ var sctpListenerNameTests = []struct {
 	net   string
 	laddr *SCTPAddr
 }{
-	{"sctp4", &SCTPAddr{IP: []net.IP{net.IPv4(127, 0, 0, 1)}}},
+	{"sctp4", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}}}},
 	{"sctp4", &SCTPAddr{}},
 	{"sctp4", nil},
 }

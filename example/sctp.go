@@ -31,15 +31,17 @@ func main() {
 	var port = flag.Int("port", 0, "")
 	flag.Parse()
 
-	ips := []net.IP{}
+	ips := []net.IPAddr{}
 
 	for _, i := range strings.Split(*ip, ",") {
-		ips = append(ips, net.ParseIP(i))
+		if a, err := net.ResolveIPAddr("ip", i); err == nil {
+			ips = append(ips, *a)
+		}
 	}
 
 	addr := &sctp.SCTPAddr{
-		IP:   ips,
-		Port: *port,
+		IPAddrs: ips,
+		Port:    *port,
 	}
 
 	if *server {
