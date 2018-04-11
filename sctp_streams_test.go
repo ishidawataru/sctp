@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"sync"
 	"testing"
 	"time"
 )
@@ -14,14 +15,16 @@ const (
 )
 
 func TestStreams(t *testing.T) {
-
+	var rMu sync.Mutex
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	randomStr := func(strlen int) string {
 		const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 		result := make([]byte, strlen)
+		rMu.Lock()
 		for i := range result {
 			result[i] = chars[r.Intn(len(chars))]
 		}
+		rMu.Unlock()
 		return string(result)
 	}
 
@@ -88,7 +91,10 @@ func TestStreams(t *testing.T) {
 					Stream: uint16(ppid),
 					PPID:   uint32(ppid),
 				}
-				text := fmt.Sprintf("Test %s ***\n\t\t%d %d ***", randomStr(r.Intn(255)), test, ppid)
+				rMu.Lock()
+				randomLen := r.Intn(255)
+				rMu.Unlock()
+				text := fmt.Sprintf("Test %s ***\n\t\t%d %d ***", randomStr(randomLen), test, ppid)
 				n, err := conn.SCTPWrite([]byte(text), info)
 				if err != nil {
 					t.Errorf("failed to write %s, len: %d, err: %v, bytes written: %d", text, len(text), err, n)

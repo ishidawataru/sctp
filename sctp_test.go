@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"runtime"
 	"sync"
+	"syscall"
 	"testing"
-	"time"
 )
 
 type resolveSCTPAddrTest struct {
@@ -18,16 +18,28 @@ type resolveSCTPAddrTest struct {
 }
 
 var resolveSCTPAddrTests = []resolveSCTPAddrTest{
-	{"sctp", "127.0.0.1:0", &SCTPAddr{IP: []net.IP{net.IPv4(127, 0, 0, 1)}, Port: 0}, nil},
-	{"sctp4", "127.0.0.1:65535", &SCTPAddr{IP: []net.IP{net.IPv4(127, 0, 0, 1)}, Port: 65535}, nil},
+	{"sctp", "127.0.0.1:0", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}}, Port: 0}, nil},
+	{"sctp4", "127.0.0.1:65535", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}}, Port: 65535}, nil},
 
-	{"sctp", "[::1]:0", &SCTPAddr{IP: []net.IP{net.ParseIP("::1")}, Port: 0}, nil},
-	{"sctp6", "[::1]:65535", &SCTPAddr{IP: []net.IP{net.ParseIP("::1")}, Port: 65535}, nil},
+	{"sctp", "[::1]:0", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.ParseIP("::1")}}, Port: 0}, nil},
+	{"sctp6", "[::1]:65535", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.ParseIP("::1")}}, Port: 65535}, nil},
+
+	{"sctp", "[fe80::1%eth0]:0", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.ParseIP("fe80::1"), Zone: "eth0"}}, Port: 0}, nil},
+	{"sctp6", "[fe80::1%eth0]:65535", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.ParseIP("fe80::1"), Zone: "eth0"}}, Port: 65535}, nil},
 
 	{"sctp", ":12345", &SCTPAddr{Port: 12345}, nil},
 
-	{"sctp", "127.0.0.1/10.0.0.1:0", &SCTPAddr{IP: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(10, 0, 0, 1)}, Port: 0}, nil},
-	{"sctp4", "127.0.0.1/10.0.0.1:65535", &SCTPAddr{IP: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(10, 0, 0, 1)}, Port: 65535}, nil},
+	{"sctp", "127.0.0.1/10.0.0.1:0", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}, net.IPAddr{IP: net.IPv4(10, 0, 0, 1)}}, Port: 0}, nil},
+	{"sctp4", "127.0.0.1/10.0.0.1:65535", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}, net.IPAddr{IP: net.IPv4(10, 0, 0, 1)}}, Port: 65535}, nil},
+}
+
+func TestSCTPAddrString(t *testing.T) {
+	for _, tt := range resolveSCTPAddrTests {
+		s := tt.addr.String()
+		if tt.litAddrOrName != s {
+			t.Errorf("expected %q, got %q", tt.litAddrOrName, s)
+		}
+	}
 }
 
 func TestResolveSCTPAddr(t *testing.T) {
@@ -50,7 +62,7 @@ var sctpListenerNameTests = []struct {
 	net   string
 	laddr *SCTPAddr
 }{
-	{"sctp4", &SCTPAddr{IP: []net.IP{net.IPv4(127, 0, 0, 1)}}},
+	{"sctp4", &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}}}},
 	{"sctp4", &SCTPAddr{}},
 	{"sctp4", nil},
 }
@@ -118,19 +130,22 @@ func TestSCTPCloseRecv(t *testing.T) {
 	}
 	var conn net.Conn
 	var wg sync.WaitGroup
+	connReady := make(chan struct{}, 1)
 	wg.Add(1)
 	go func() {
-		conn, err = ln.Accept()
-		if err != nil {
-			t.Fatal(err)
+		defer wg.Done()
+		var xerr error
+		conn, xerr = ln.Accept()
+		if xerr != nil {
+			t.Fatal(xerr)
 		}
+		connReady <- struct{}{}
 		buf := make([]byte, 256)
-		_, err = conn.Read(buf)
-		if err != io.EOF {
-			t.Fatalf("read failed: %v", err)
+		_, xerr = conn.Read(buf)
+		t.Logf("got error while read: %v", xerr)
+		if xerr != io.EOF && xerr != syscall.EBADF {
+			t.Fatalf("read failed: %v", xerr)
 		}
-		wg.Done()
-
 	}()
 
 	_, err = DialSCTP("sctp", nil, ln.Addr().(*SCTPAddr))
@@ -138,9 +153,7 @@ func TestSCTPCloseRecv(t *testing.T) {
 		t.Fatalf("failed to dial: %s", err)
 	}
 
-	// wait conn gets ready
-	time.Sleep(time.Second)
-
+	<-connReady
 	err = conn.Close()
 	if err != nil {
 		t.Fatalf("close failed: %v", err)

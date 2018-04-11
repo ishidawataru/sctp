@@ -123,8 +123,8 @@ func ListenSCTP(net string, laddr *SCTPAddr) (*SCTPListener, error) {
 			if addr == nil {
 				return false
 			}
-			for _, ip := range addr.IP {
-				if ip.To4() == nil {
+			for _, ip := range addr.IPAddrs {
+				if ip.IP.To4() == nil {
 					return true
 				}
 			}
@@ -152,7 +152,7 @@ func ListenSCTP(net string, laddr *SCTPAddr) (*SCTPListener, error) {
 	if err != nil {
 		return nil, err
 	}
-	if laddr != nil && len(laddr.IP) != 0 {
+	if laddr != nil && len(laddr.IPAddrs) != 0 {
 		err := SCTPBind(sock, laddr, SCTP_BINDX_ADD_ADDR)
 		if err != nil {
 			return nil, err
@@ -168,8 +168,6 @@ func ListenSCTP(net string, laddr *SCTPAddr) (*SCTPListener, error) {
 }
 
 func (ln *SCTPListener) Accept() (net.Conn, error) {
-	ln.m.Lock()
-	defer ln.m.Unlock()
 	fd, _, err := syscall.Accept4(ln.fd, 0)
 	return NewSCTPConn(fd, nil), err
 }
@@ -187,8 +185,8 @@ func DialSCTP(net string, laddr, raddr *SCTPAddr) (*SCTPConn, error) {
 			if addr == nil {
 				return false
 			}
-			for _, ip := range addr.IP {
-				if ip.To4() == nil {
+			for _, ip := range addr.IPAddrs {
+				if ip.IP.To4() == nil {
 					return true
 				}
 			}
