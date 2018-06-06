@@ -170,7 +170,7 @@ func (ln *SCTPListener) Close() error {
 }
 
 func DialSCTP(network string, laddr, raddr *SCTPAddr) (*SCTPConn, error) {
-	af, ipv6only := favoriteAddrFamily(network, laddr, nil, "listen")
+	af, ipv6only := favoriteAddrFamily(network, laddr, nil, "dial")
 
 	sock, err := syscall.Socket(
 		af,
