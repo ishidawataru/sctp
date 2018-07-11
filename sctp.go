@@ -215,32 +215,45 @@ type SCTPAddr struct {
 }
 
 func (a *SCTPAddr) ToRawSockAddrBuf() []byte {
-	buf := []byte{}
 	p := htons(uint16(a.Port))
-	for _, ip := range a.IPAddrs {
-		if ip.IP.To4() != nil {
-			s := syscall.RawSockaddrInet4{
-				Family: syscall.AF_INET,
-				Port:   p,
-			}
-			copy(s.Addr[:], ip.IP.To4())
-			buf = append(buf, toBuf(s)...)
-		} else {
-			var scopeid uint32
-			ifi, err := net.InterfaceByName(ip.Zone)
-			if err == nil {
-				scopeid = uint32(ifi.Index)
-			}
-			s := syscall.RawSockaddrInet6{
-				Family:   syscall.AF_INET6,
-				Port:     p,
-				Scope_id: scopeid,
-			}
-			copy(s.Addr[:], ip.IP)
-			buf = append(buf, toBuf(s)...)
+	if len(a.IPAddrs) == 0 { // if a.IPAddrs list is empty - fall back to IPv4 zero addr
+		s := syscall.RawSockaddrInet4{
+			Family: syscall.AF_INET,
+			Port:   p,
 		}
+		copy(s.Addr[:], net.IPv4zero)
+		return toBuf(s)
+	} else {
+		buf := []byte{}
+		for _, ip := range a.IPAddrs {
+			ipBytes := ip.IP
+			if len(ipBytes) == 0 {
+				ipBytes = net.IPv4zero
+			}
+			if ip4 := ipBytes.To4(); ip4 != nil {
+				s := syscall.RawSockaddrInet4{
+					Family: syscall.AF_INET,
+					Port:   p,
+				}
+				copy(s.Addr[:], ip4)
+				buf = append(buf, toBuf(s)...)
+			} else {
+				var scopeid uint32
+				ifi, err := net.InterfaceByName(ip.Zone)
+				if err == nil {
+					scopeid = uint32(ifi.Index)
+				}
+				s := syscall.RawSockaddrInet6{
+					Family:   syscall.AF_INET6,
+					Port:     p,
+					Scope_id: scopeid,
+				}
+				copy(s.Addr[:], ipBytes)
+				buf = append(buf, toBuf(s)...)
+			}
+		}
+		return buf
 	}
-	return buf
 }
 
 func (a *SCTPAddr) String() string {
@@ -367,6 +380,7 @@ func (c *SCTPConn) Read(b []byte) (int, error) {
 
 func (c *SCTPConn) SetInitMsg(numOstreams, maxInstreams, maxAttempts, maxInitTimeout int) error {
 	return setInitOpts(c.fd(), InitMsg{
+		NumOstreams:    uint16(numOstreams),
 		MaxInstreams:   uint16(maxInstreams),
 		MaxAttempts:    uint16(maxAttempts),
 		MaxInitTimeout: uint16(maxInitTimeout),
