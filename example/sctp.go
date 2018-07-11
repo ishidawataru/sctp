@@ -37,7 +37,10 @@ func main() {
 
 	for _, i := range strings.Split(*ip, ",") {
 		if a, err := net.ResolveIPAddr("ip", i); err == nil {
+			log.Printf("Resolvied address '%s' to %s\n", i, a)
 			ips = append(ips, *a)
+		} else {
+			log.Printf("Error resolving address '%s': %v\n", i, err)
 		}
 	}
 
@@ -45,6 +48,7 @@ func main() {
 		IPAddrs: ips,
 		Port:    *port,
 	}
+	log.Printf("raw addr: %+v\n", addr.ToRawSockAddrBuf())
 
 	if *server {
 		ln, err := sctp.ListenSCTP("sctp", addr)

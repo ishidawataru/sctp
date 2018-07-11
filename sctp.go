@@ -282,6 +282,7 @@ func ResolveSCTPAddr(network, addrs string) (*SCTPAddr, error) {
 	tcpnet := ""
 	switch network {
 	case "", "sctp":
+		tcpnet = "tcp"
 	case "sctp4":
 		tcpnet = "tcp4"
 	case "sctp6":

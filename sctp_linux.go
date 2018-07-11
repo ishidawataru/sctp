@@ -119,13 +119,23 @@ func ListenSCTP(net string, laddr *SCTPAddr) (*SCTPListener, error) {
 }
 
 func ListenSCTPExt(network string, laddr *SCTPAddr, options InitMsg) (*SCTPListener, error) {
-	af, _ := favoriteAddrFamily(network, laddr, nil, "listen")
+	af, ipv6only := favoriteAddrFamily(network, laddr, nil, "listen")
 	sock, err := syscall.Socket(
 		af,
 		syscall.SOCK_STREAM,
 		syscall.IPPROTO_SCTP,
 	)
 	if err != nil {
+		return nil, err
+	}
+
+	defer func() { // close socket on error
+		if err != nil {
+			syscall.Close(sock)
+		}
+	}()
+
+	if err = setDefaultSockopts(sock, af, ipv6only); err != nil {
 		return nil, err
 	}
 	err = setInitOpts(sock, options)
@@ -171,13 +181,23 @@ func DialSCTP(net string, laddr, raddr *SCTPAddr) (*SCTPConn, error) {
 }
 
 func DialSCTPExt(network string, laddr, raddr *SCTPAddr, options InitMsg) (*SCTPConn, error) {
-	af, _ := favoriteAddrFamily(network, laddr, nil, "dial")
+	af, ipv6only := favoriteAddrFamily(network, laddr, raddr, "dial")
 	sock, err := syscall.Socket(
 		af,
 		syscall.SOCK_STREAM,
 		syscall.IPPROTO_SCTP,
 	)
 	if err != nil {
+		return nil, err
+	}
+
+	defer func() { // close socket on error
+		if err != nil {
+			syscall.Close(sock)
+		}
+	}()
+
+	if err = setDefaultSockopts(sock, af, ipv6only); err != nil {
 		return nil, err
 	}
 	err = setInitOpts(sock, options)
