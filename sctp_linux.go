@@ -119,7 +119,7 @@ func ListenSCTP(net string, laddr *SCTPAddr) (*SCTPListener, error) {
 }
 
 func ListenSCTPExt(network string, laddr *SCTPAddr, options InitMsg) (*SCTPListener, error) {
-	af, _ := favoriteAddrFamily(network, laddr, nil, "listen")
+	af, ipv6only := favoriteAddrFamily(network, laddr, nil, "listen")
 	sock, err := syscall.Socket(
 		af,
 		syscall.SOCK_STREAM,
@@ -128,8 +128,13 @@ func ListenSCTPExt(network string, laddr *SCTPAddr, options InitMsg) (*SCTPListe
 	if err != nil {
 		return nil, err
 	}
+	if err = setDefaultSockopts(sock, af, ipv6only); err != nil {
+		syscall.Close(sock)
+		return nil, err
+	}
 	err = setInitOpts(sock, options)
 	if err != nil {
+		syscall.Close(sock)
 		return nil, err
 	}
 
@@ -144,11 +149,13 @@ func ListenSCTPExt(network string, laddr *SCTPAddr, options InitMsg) (*SCTPListe
 		}
 		err := SCTPBind(sock, laddr, SCTP_BINDX_ADD_ADDR)
 		if err != nil {
+			syscall.Close(sock)
 			return nil, err
 		}
 	}
 	err = syscall.Listen(sock, syscall.SOMAXCONN)
 	if err != nil {
+		syscall.Close(sock)
 		return nil, err
 	}
 	return &SCTPListener{
@@ -171,7 +178,7 @@ func DialSCTP(net string, laddr, raddr *SCTPAddr) (*SCTPConn, error) {
 }
 
 func DialSCTPExt(network string, laddr, raddr *SCTPAddr, options InitMsg) (*SCTPConn, error) {
-	af, _ := favoriteAddrFamily(network, laddr, nil, "dial")
+	af, ipv6only := favoriteAddrFamily(network, laddr, raddr, "dial")
 	sock, err := syscall.Socket(
 		af,
 		syscall.SOCK_STREAM,
@@ -180,8 +187,13 @@ func DialSCTPExt(network string, laddr, raddr *SCTPAddr, options InitMsg) (*SCTP
 	if err != nil {
 		return nil, err
 	}
+	if err = setDefaultSockopts(sock, af, ipv6only); err != nil {
+		syscall.Close(sock)
+		return nil, err
+	}
 	err = setInitOpts(sock, options)
 	if err != nil {
+		syscall.Close(sock)
 		return nil, err
 	}
 	if laddr != nil {
@@ -195,11 +207,13 @@ func DialSCTPExt(network string, laddr, raddr *SCTPAddr, options InitMsg) (*SCTP
 		}
 		err := SCTPBind(sock, laddr, SCTP_BINDX_ADD_ADDR)
 		if err != nil {
+			syscall.Close(sock)
 			return nil, err
 		}
 	}
 	_, err = SCTPConnect(sock, raddr)
 	if err != nil {
+		syscall.Close(sock)
 		return nil, err
 	}
 	return NewSCTPConn(sock, nil), nil
