@@ -197,13 +197,16 @@ func htons(h uint16) uint16 {
 
 var ntohs = htons
 
-func setNumOstreams(fd, num int) error {
-	param := InitMsg{
-		NumOstreams: uint16(num),
-	}
-	optlen := unsafe.Sizeof(param)
-	_, _, err := setsockopt(fd, SCTP_INITMSG, uintptr(unsafe.Pointer(&param)), uintptr(optlen))
+// setInitOpts sets options for an SCTP association initialization
+// see https://tools.ietf.org/html/rfc4960#page-25
+func setInitOpts(fd int, options InitMsg) error {
+	optlen := unsafe.Sizeof(options)
+	_, _, err := setsockopt(fd, SCTP_INITMSG, uintptr(unsafe.Pointer(&options)), uintptr(optlen))
 	return err
+}
+
+func setNumOstreams(fd, num int) error {
+	return setInitOpts(fd, InitMsg{NumOstreams: uint16(num)})
 }
 
 type SCTPAddr struct {
@@ -363,15 +366,11 @@ func (c *SCTPConn) Read(b []byte) (int, error) {
 }
 
 func (c *SCTPConn) SetInitMsg(numOstreams, maxInstreams, maxAttempts, maxInitTimeout int) error {
-	param := InitMsg{
-		NumOstreams:    uint16(numOstreams),
+	return setInitOpts(c.fd(), InitMsg{
 		MaxInstreams:   uint16(maxInstreams),
 		MaxAttempts:    uint16(maxAttempts),
 		MaxInitTimeout: uint16(maxInitTimeout),
-	}
-	optlen := unsafe.Sizeof(param)
-	_, _, err := setsockopt(c.fd(), SCTP_INITMSG, uintptr(unsafe.Pointer(&param)), uintptr(optlen))
-	return err
+	})
 }
 
 func (c *SCTPConn) SubscribeEvents(flags int) error {
