@@ -128,13 +128,12 @@ func ListenSCTPExt(network string, laddr *SCTPAddr, options InitMsg) (*SCTPListe
 	if err != nil {
 		return nil, err
 	}
-
-	defer func() { // close socket on error
+	// close socket on error
+	defer func() {
 		if err != nil {
 			syscall.Close(sock)
 		}
 	}()
-
 	if err = setDefaultSockopts(sock, af, ipv6only); err != nil {
 		return nil, err
 	}
@@ -190,13 +189,12 @@ func DialSCTPExt(network string, laddr, raddr *SCTPAddr, options InitMsg) (*SCTP
 	if err != nil {
 		return nil, err
 	}
-
-	defer func() { // close socket on error
+	// close socket on error
+	defer func() {
 		if err != nil {
 			syscall.Close(sock)
 		}
 	}()
-
 	if err = setDefaultSockopts(sock, af, ipv6only); err != nil {
 		return nil, err
 	}
