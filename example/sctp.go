@@ -29,13 +29,18 @@ func main() {
 	var server = flag.Bool("server", false, "")
 	var ip = flag.String("ip", "0.0.0.0", "")
 	var port = flag.Int("port", 0, "")
+	var lport = flag.Int("lport", 0, "")
+
 	flag.Parse()
 
 	ips := []net.IPAddr{}
 
 	for _, i := range strings.Split(*ip, ",") {
 		if a, err := net.ResolveIPAddr("ip", i); err == nil {
+			log.Printf("Resolved address '%s' to %s", i, a)
 			ips = append(ips, *a)
+		} else {
+			log.Printf("Error resolving address '%s': %v", i, err)
 		}
 	}
 
@@ -43,6 +48,7 @@ func main() {
 		IPAddrs: ips,
 		Port:    *port,
 	}
+	log.Printf("raw addr: %+v\n", addr.ToRawSockAddrBuf())
 
 	if *server {
 		ln, err := sctp.ListenSCTP("sctp", addr)
@@ -56,16 +62,23 @@ func main() {
 			if err != nil {
 				log.Fatalf("failed to accept: %v", err)
 			}
+			log.Printf("Accepted Connection from RemoteAddr: %s", conn.RemoteAddr())
 			wconn := sctp.NewSCTPSndRcvInfoWrappedConn(conn.(*sctp.SCTPConn))
 			go serveClient(wconn)
 		}
 
 	} else {
-
-		conn, err := sctp.DialSCTP("sctp", nil, addr)
+		var laddr *sctp.SCTPAddr
+		if *lport != 0 {
+			laddr = &sctp.SCTPAddr{
+				Port: *lport,
+			}
+		}
+		conn, err := sctp.DialSCTP("sctp", laddr, addr)
 		if err != nil {
 			log.Fatalf("failed to dial: %v", err)
 		}
+		log.Printf("Dail LocalAddr: %s; RemoteAddr: %s", conn.LocalAddr(), conn.RemoteAddr())
 		ppid := 0
 		for {
 			info := &sctp.SndRcvInfo{

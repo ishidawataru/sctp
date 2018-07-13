@@ -168,12 +168,11 @@ func (a *SCTPAddr) isWildcard() bool {
 }
 
 func (a *SCTPAddr) family() int {
-	if a == nil {
-		return syscall.AF_INET
-	}
-	for _, ip := range a.IPAddrs {
-		if ip.IP.To4() == nil {
-			return syscall.AF_INET6
+	if a != nil {
+		for _, ip := range a.IPAddrs {
+			if ip.IP.To4() == nil {
+				return syscall.AF_INET6
+			}
 		}
 	}
 	return syscall.AF_INET
