@@ -114,9 +114,14 @@ func (c *SCTPConn) Close() error {
 	return syscall.EBADF
 }
 
-func ListenSCTP(network string, laddr *SCTPAddr) (*SCTPListener, error) {
-	af, ipv6only := favoriteAddrFamily(network, laddr, nil, "listen")
+// ListenSCTP - start listener on specified address/port
+func ListenSCTP(net string, laddr *SCTPAddr) (*SCTPListener, error) {
+	return ListenSCTPExt(net, laddr, InitMsg{NumOstreams: SCTP_MAX_STREAM})
+}
 
+// ListenSCTPExt - start listener on specified address/port with given SCTP options
+func ListenSCTPExt(network string, laddr *SCTPAddr, options InitMsg) (*SCTPListener, error) {
+	af, ipv6only := favoriteAddrFamily(network, laddr, nil, "listen")
 	sock, err := syscall.Socket(
 		af,
 		syscall.SOCK_STREAM,
@@ -126,18 +131,22 @@ func ListenSCTP(network string, laddr *SCTPAddr) (*SCTPListener, error) {
 		return nil, err
 	}
 
+	// close socket on error
+	defer func() {
+		if err != nil {
+			syscall.Close(sock)
+		}
+	}()
 	if err = setDefaultSockopts(sock, af, ipv6only); err != nil {
-		syscall.Close(sock)
 		return nil, err
 	}
-
-	err = setNumOstreams(sock, SCTP_MAX_STREAM)
+	err = setInitOpts(sock, options)
 	if err != nil {
 		return nil, err
 	}
 
 	if laddr != nil {
-		//If IP address and/or port was not provided so far, let's use the unspecified IPv4 or IPv6 address
+		// If IP address and/or port was not provided so far, let's use the unspecified IPv4 or IPv6 address
 		if len(laddr.IPAddrs) == 0 {
 			if af == syscall.AF_INET {
 				laddr.IPAddrs = append(laddr.IPAddrs, net.IPAddr{IP: net.IPv4zero})
@@ -169,9 +178,14 @@ func (ln *SCTPListener) Close() error {
 	return syscall.Close(ln.fd)
 }
 
-func DialSCTP(network string, laddr, raddr *SCTPAddr) (*SCTPConn, error) {
-	af, ipv6only := favoriteAddrFamily(network, laddr, nil, "dial")
+// DialSCTP - bind socket to laddr (if given) and connect to raddr
+func DialSCTP(net string, laddr, raddr *SCTPAddr) (*SCTPConn, error) {
+	return DialSCTPExt(net, laddr, raddr, InitMsg{NumOstreams: SCTP_MAX_STREAM})
+}
 
+// DialSCTPExt - same as DialSCTP but with given SCTP options
+func DialSCTPExt(network string, laddr, raddr *SCTPAddr, options InitMsg) (*SCTPConn, error) {
+	af, ipv6only := favoriteAddrFamily(network, laddr, raddr, "dial")
 	sock, err := syscall.Socket(
 		af,
 		syscall.SOCK_STREAM,
@@ -181,17 +195,28 @@ func DialSCTP(network string, laddr, raddr *SCTPAddr) (*SCTPConn, error) {
 		return nil, err
 	}
 
+	// close socket on error
+	defer func() {
+		if err != nil {
+			syscall.Close(sock)
+		}
+	}()
 	if err = setDefaultSockopts(sock, af, ipv6only); err != nil {
-		syscall.Close(sock)
 		return nil, err
 	}
-
-	err = setNumOstreams(sock, SCTP_MAX_STREAM)
+	err = setInitOpts(sock, options)
 	if err != nil {
 		return nil, err
 	}
-
 	if laddr != nil {
+		// If IP address and/or port was not provided so far, let's use the unspecified IPv4 or IPv6 address
+		if len(laddr.IPAddrs) == 0 {
+			if af == syscall.AF_INET {
+				laddr.IPAddrs = append(laddr.IPAddrs, net.IPAddr{IP: net.IPv4zero})
+			} else if af == syscall.AF_INET6 {
+				laddr.IPAddrs = append(laddr.IPAddrs, net.IPAddr{IP: net.IPv6zero})
+			}
+		}
 		err := SCTPBind(sock, laddr, SCTP_BINDX_ADD_ADDR)
 		if err != nil {
 			return nil, err
