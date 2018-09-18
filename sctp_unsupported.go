@@ -42,6 +42,10 @@ func (ln *SCTPListener) Accept() (net.Conn, error) {
 	return nil, ErrUnsupported
 }
 
+func (ln *SCTPListener) AcceptSCTP() (*SCTPConn, error) {
+	return nil, ErrUnsupported
+}
+
 func (ln *SCTPListener) Close() error {
 	return ErrUnsupported
 }
