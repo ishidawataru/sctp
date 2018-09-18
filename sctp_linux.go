@@ -168,9 +168,15 @@ func ListenSCTPExt(network string, laddr *SCTPAddr, options InitMsg) (*SCTPListe
 	}, nil
 }
 
-func (ln *SCTPListener) Accept() (net.Conn, error) {
+// AcceptSCTP waits for and returns the next SCTP connection to the listener.
+func (ln *SCTPListener) AcceptSCTP() (*SCTPConn, error) {
 	fd, _, err := syscall.Accept4(ln.fd, 0)
 	return NewSCTPConn(fd, nil), err
+}
+
+// Accept waits for and returns the next connection connection to the listener.
+func (ln *SCTPListener) Accept() (net.Conn, error) {
+	return ln.AcceptSCTP()
 }
 
 func (ln *SCTPListener) Close() error {
