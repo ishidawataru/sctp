@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"log"
+	"math/rand"
 	"net"
 	"strings"
 	"time"
@@ -10,15 +11,18 @@ import (
 	"github.com/ishidawataru/sctp"
 )
 
-func serveClient(conn net.Conn) error {
+func serveClient(conn net.Conn, bufsize int) error {
 	for {
-		buf := make([]byte, 254)
+		buf := make([]byte, bufsize+128) // add overhead of SCTPSndRcvInfoWrappedConn
 		n, err := conn.Read(buf)
 		if err != nil {
+			log.Printf("read failed: %v", err)
 			return err
 		}
+		log.Printf("read: %d", n)
 		n, err = conn.Write(buf[:n])
 		if err != nil {
+			log.Printf("write failed: %v", err)
 			return err
 		}
 		log.Printf("write: %d", n)
@@ -30,6 +34,9 @@ func main() {
 	var ip = flag.String("ip", "0.0.0.0", "")
 	var port = flag.Int("port", 0, "")
 	var lport = flag.Int("lport", 0, "")
+	var bufsize = flag.Int("bufsize", 256, "")
+	var sndbuf = flag.Int("sndbuf", 0, "")
+	var rcvbuf = flag.Int("rcvbuf", 0, "")
 
 	flag.Parse()
 
@@ -64,7 +71,29 @@ func main() {
 			}
 			log.Printf("Accepted Connection from RemoteAddr: %s", conn.RemoteAddr())
 			wconn := sctp.NewSCTPSndRcvInfoWrappedConn(conn.(*sctp.SCTPConn))
-			go serveClient(wconn)
+			if *sndbuf != 0 {
+				err = wconn.SetWriteBuffer(*sndbuf)
+				if err != nil {
+					log.Fatalf("failed to set write buf: %v", err)
+				}
+			}
+			if *rcvbuf != 0 {
+				err = wconn.SetReadBuffer(*rcvbuf)
+				if err != nil {
+					log.Fatalf("failed to set read buf: %v", err)
+				}
+			}
+			*sndbuf, err = wconn.GetWriteBuffer()
+			if err != nil {
+				log.Fatalf("failed to get write buf: %v", err)
+			}
+			*rcvbuf, err = wconn.GetWriteBuffer()
+			if err != nil {
+				log.Fatalf("failed to get read buf: %v", err)
+			}
+			log.Printf("SndBufSize: %d, RcvBufSize: %d", *sndbuf, *rcvbuf)
+
+			go serveClient(wconn, *bufsize)
 		}
 
 	} else {
@@ -78,7 +107,32 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to dial: %v", err)
 		}
+
 		log.Printf("Dail LocalAddr: %s; RemoteAddr: %s", conn.LocalAddr(), conn.RemoteAddr())
+
+		if *sndbuf != 0 {
+			err = conn.SetWriteBuffer(*sndbuf)
+			if err != nil {
+				log.Fatalf("failed to set write buf: %v", err)
+			}
+		}
+		if *rcvbuf != 0 {
+			err = conn.SetReadBuffer(*rcvbuf)
+			if err != nil {
+				log.Fatalf("failed to set read buf: %v", err)
+			}
+		}
+
+		*sndbuf, err = conn.GetWriteBuffer()
+		if err != nil {
+			log.Fatalf("failed to get write buf: %v", err)
+		}
+		*rcvbuf, err = conn.GetReadBuffer()
+		if err != nil {
+			log.Fatalf("failed to get read buf: %v", err)
+		}
+		log.Printf("SndBufSize: %d, RcvBufSize: %d", *sndbuf, *rcvbuf)
+
 		ppid := 0
 		for {
 			info := &sctp.SndRcvInfo{
@@ -87,17 +141,21 @@ func main() {
 			}
 			ppid += 1
 			conn.SubscribeEvents(sctp.SCTP_EVENT_DATA_IO)
-			n, err := conn.SCTPWrite([]byte("hello"), info)
+			buf := make([]byte, *bufsize)
+			n, err := rand.Read(buf)
+			if n != *bufsize {
+				log.Fatalf("failed to generate random string len: %d", *bufsize)
+			}
+			n, err = conn.SCTPWrite(buf, info)
 			if err != nil {
 				log.Fatalf("failed to write: %v", err)
 			}
-			log.Printf("write: %d", n)
-			buf := make([]byte, 254)
-			_, info, err = conn.SCTPRead(buf)
+			log.Printf("write: len %d", n)
+			n, info, err = conn.SCTPRead(buf)
 			if err != nil {
 				log.Fatalf("failed to read: %v", err)
 			}
-			log.Printf("read: info: %+v", info)
+			log.Printf("read: len %d, info: %+v", n, info)
 			time.Sleep(time.Second)
 		}
 	}
