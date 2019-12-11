@@ -709,3 +709,21 @@ func (c *SCTPSndRcvInfoWrappedConn) SetReadBuffer(bytes int) error {
 func (c *SCTPSndRcvInfoWrappedConn) GetReadBuffer() (int, error) {
 	return c.conn.GetReadBuffer()
 }
+
+// SocketConfig contains options for the SCTP socket.
+type SocketConfig struct {
+	// If Control is not nil it is called after the socket is created but before
+	// it is bound or connected.
+	Control func(network, address string, c syscall.RawConn) error
+
+	// InitMsg is the options to send in the initial SCTP message
+	InitMsg InitMsg
+}
+
+func (cfg *SocketConfig) Listen(net string, laddr *SCTPAddr) (*SCTPListener, error) {
+	return listenSCTPExtConfig(net, laddr, cfg.InitMsg, cfg.Control)
+}
+
+func (cfg *SocketConfig) Dial(net string, laddr, raddr *SCTPAddr) (*SCTPConn, error) {
+	return dialSCTPExtConfig(net, laddr, raddr, cfg.InitMsg, cfg.Control)
+}

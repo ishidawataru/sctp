@@ -20,6 +20,7 @@ import (
 	"errors"
 	"net"
 	"runtime"
+	"syscall"
 )
 
 var ErrUnsupported = errors.New("SCTP is unsupported on " + runtime.GOOS + "/" + runtime.GOARCH)
@@ -68,6 +69,10 @@ func ListenSCTPExt(net string, laddr *SCTPAddr, options InitMsg) (*SCTPListener,
 	return nil, ErrUnsupported
 }
 
+func listenSCTPExtConfig(network string, laddr *SCTPAddr, options InitMsg, control func(network, address string, c syscall.RawConn) error) (*SCTPListener, error) {
+	return nil, ErrUnsupported
+}
+
 func (ln *SCTPListener) Accept() (net.Conn, error) {
 	return nil, ErrUnsupported
 }
@@ -85,5 +90,9 @@ func DialSCTP(net string, laddr, raddr *SCTPAddr) (*SCTPConn, error) {
 }
 
 func DialSCTPExt(network string, laddr, raddr *SCTPAddr, options InitMsg) (*SCTPConn, error) {
+	return nil, ErrUnsupported
+}
+
+func dialSCTPExtConfig(network string, laddr, raddr *SCTPAddr, options InitMsg, control func(network, address string, c syscall.RawConn) error) (*SCTPConn, error) {
 	return nil, ErrUnsupported
 }
