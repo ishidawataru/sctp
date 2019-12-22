@@ -176,7 +176,7 @@ func listenSCTPExtConfig(network string, laddr *SCTPAddr, options InitMsg, contr
 	af, ipv6only := favoriteAddrFamily(network, laddr, nil, "listen")
 	sock, err := syscall.Socket(
 		af,
-		syscall.SOCK_STREAM,
+		syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC,
 		syscall.IPPROTO_SCTP,
 	)
 	if err != nil {
@@ -228,8 +228,22 @@ func listenSCTPExtConfig(network string, laddr *SCTPAddr, options InitMsg, contr
 
 // AcceptSCTP waits for and returns the next SCTP connection to the listener.
 func (ln *SCTPListener) AcceptSCTP() (*SCTPConn, error) {
-	fd, _, err := syscall.Accept4(ln.fd, 0)
-	return NewSCTPConn(fd, nil), err
+	for {
+		fd, _, err := syscall.Accept4(ln.fd, syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC)
+		if err == nil {
+			return NewSCTPConn(fd, nil), err
+		}
+		switch err {
+		case syscall.EAGAIN:
+			// Nonblocking socket with no content in queue
+			continue
+		case syscall.ECONNABORTED:
+			// This meas that a socket on the listen
+			// queue was closed before we Accept()ed it;
+			// try again.
+			continue
+		}
+	}
 }
 
 // Accept waits for and returns the next connection connection to the listener.
