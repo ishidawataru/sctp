@@ -1,0 +1,14 @@
+version: '3.7'
+
+services:
+  gosctp:
+    container_name: gosctp
+    image: golang:buster
+    network_mode: host
+    volumes:
+      - ../:/go/sctp
+    command:
+      - /bin/bash
+      - -c
+      - |
+        tail -f /dev/null
