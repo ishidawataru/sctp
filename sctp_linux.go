@@ -221,15 +221,54 @@ func listenSCTPExtConfig(network string, laddr *SCTPAddr, options InitMsg, contr
 	if err != nil {
 		return nil, err
 	}
+
+	_, _, errno := syscall.Syscall(syscall.SYS_FCNTL,
+		uintptr(sock),
+		syscall.F_SETFL,
+		syscall.O_NONBLOCK)
+
+	if errno != 0 {
+		return nil, error(errno)
+	}
+
 	return &SCTPListener{
 		fd: sock,
 	}, nil
 }
 
+func FD_SET(p *syscall.FdSet, i int) {
+	p.Bits[i/64] |= 1 << (uint(i) % 64)
+}
+
+func FD_ISSET(p *syscall.FdSet, i int) bool {
+	return (p.Bits[i/64] & (1 << (uint(i) % 64))) != 0
+}
+
 // AcceptSCTP waits for and returns the next SCTP connection to the listener.
 func (ln *SCTPListener) AcceptSCTP() (*SCTPConn, error) {
-	fd, _, err := syscall.Accept4(ln.fd, 0)
-	return NewSCTPConn(fd, nil), err
+	ln.m.Lock()
+	defer ln.m.Unlock()
+
+	fds := &syscall.FdSet{}
+	FD_SET(fds, ln.fd)
+
+	for {
+		select {
+		case <-ln.done:
+			return nil, ln.Close()
+		default:
+			tv := syscall.Timeval{5, 0}
+			syscall.Select(ln.fd+1, fds, nil, nil, &tv)
+			fd, _, err := syscall.Accept4(ln.fd, 0)
+			if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+				continue
+			} else if err == nil {
+				return NewSCTPConn(fd, nil), nil
+			} else {
+				return nil, err
+			}
+		}
+	}
 }
 
 // Accept waits for and returns the next connection connection to the listener.
