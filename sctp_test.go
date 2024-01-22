@@ -16,12 +16,11 @@
 package sctp
 
 import (
-	"io"
 	"net"
 	"reflect"
 	"runtime"
+	"strings"
 	"sync"
-	"syscall"
 	"testing"
 )
 
@@ -159,8 +158,8 @@ func TestSCTPCloseRecv(t *testing.T) {
 		buf := make([]byte, 256)
 		_, xerr = conn.Read(buf)
 		t.Logf("got error while read: %v", xerr)
-		if xerr != io.EOF && xerr != syscall.EBADF {
-			t.Fatalf("read failed: %v", xerr)
+		if !strings.Contains(xerr.Error(), "use of closed file") {
+			t.Fatalf("read failed: %+v", xerr)
 		}
 	}()
 

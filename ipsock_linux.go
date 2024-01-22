@@ -11,7 +11,7 @@ import (
 	"syscall"
 )
 
-//from https://github.com/golang/go
+// from https://github.com/golang/go
 // Boolean to int.
 func boolint(b bool) int {
 	if b {
@@ -20,7 +20,7 @@ func boolint(b bool) int {
 	return 0
 }
 
-//from https://github.com/golang/go
+// from https://github.com/golang/go
 func ipToSockaddr(family int, ip net.IP, port int, zone string) (syscall.Sockaddr, error) {
 	switch family {
 	case syscall.AF_INET:
@@ -63,7 +63,7 @@ func ipToSockaddr(family int, ip net.IP, port int, zone string) (syscall.Sockadd
 	return nil, &net.AddrError{Err: "invalid address family", Addr: ip.String()}
 }
 
-//from https://github.com/golang/go
+// from https://github.com/golang/go
 func sockaddr(a *net.TCPAddr, family int) (syscall.Sockaddr, error) {
 	if a == nil {
 		return nil, nil
@@ -71,7 +71,7 @@ func sockaddr(a *net.TCPAddr, family int) (syscall.Sockaddr, error) {
 	return ipToSockaddr(family, a.IP, a.Port, a.Zone)
 }
 
-//from https://github.com/golang/go
+// from https://github.com/golang/go
 type ipStackCapabilities struct {
 	sync.Once             // guards following
 	ipv4Enabled           bool
@@ -79,10 +79,10 @@ type ipStackCapabilities struct {
 	ipv4MappedIPv6Enabled bool
 }
 
-//from https://github.com/golang/go
+// from https://github.com/golang/go
 var ipStackCaps ipStackCapabilities
 
-//from https://github.com/golang/go
+// from https://github.com/golang/go
 // supportsIPv4 reports whether the platform supports IPv4 networking
 // functionality.
 func supportsIPv4() bool {
@@ -90,7 +90,7 @@ func supportsIPv4() bool {
 	return ipStackCaps.ipv4Enabled
 }
 
-//from https://github.com/golang/go
+// from https://github.com/golang/go
 // supportsIPv6 reports whether the platform supports IPv6 networking
 // functionality.
 func supportsIPv6() bool {
@@ -98,7 +98,7 @@ func supportsIPv6() bool {
 	return ipStackCaps.ipv6Enabled
 }
 
-//from https://github.com/golang/go
+// from https://github.com/golang/go
 // supportsIPv4map reports whether the platform supports mapping an
 // IPv4 address inside an IPv6 address at transport layer
 // protocols. See RFC 4291, RFC 4038 and RFC 3493.
@@ -107,7 +107,7 @@ func supportsIPv4map() bool {
 	return ipStackCaps.ipv4MappedIPv6Enabled
 }
 
-//from https://github.com/golang/go
+// from https://github.com/golang/go
 // Probe probes IPv4, IPv6 and IPv4-mapped IPv6 communication
 // capabilities which are controlled by the IPV6_V6ONLY socket option
 // and kernel configuration.
@@ -158,8 +158,8 @@ func (p *ipStackCapabilities) probe() {
 	}
 }
 
-//from https://github.com/golang/go
-//Change: we check the first IP address in the list of candidate SCTP IP addresses
+// from https://github.com/golang/go
+// Change: we check the first IP address in the list of candidate SCTP IP addresses
 func (a *SCTPAddr) isWildcard() bool {
 	if a == nil {
 		return true
@@ -182,7 +182,7 @@ func (a *SCTPAddr) family() int {
 	return syscall.AF_INET
 }
 
-//from https://github.com/golang/go
+// from https://github.com/golang/go
 func favoriteAddrFamily(network string, laddr *SCTPAddr, raddr *SCTPAddr, mode string) (family int, ipv6only bool) {
 	switch network[len(network)-1] {
 	case '4':
@@ -208,8 +208,8 @@ func favoriteAddrFamily(network string, laddr *SCTPAddr, raddr *SCTPAddr, mode s
 	return syscall.AF_INET6, false
 }
 
-//from https://github.com/golang/go
-//Changes: it is for SCTP only
+// from https://github.com/golang/go
+// Changes: it is for SCTP only
 func setDefaultSockopts(s int, family int, ipv6only bool) error {
 	if family == syscall.AF_INET6 {
 		// Allow both IP versions even if the OS default
