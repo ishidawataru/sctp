@@ -1,4 +1,6 @@
+//go:build linux && !386
 // +build linux,!386
+
 // Copyright 2019 Wataru Ishida. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,10 +21,10 @@ package sctp
 import (
 	"io"
 	"net"
+	"runtime"
 	"sync/atomic"
 	"syscall"
 	"unsafe"
-	"runtime"
 )
 
 func setsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, error) {
@@ -279,7 +281,11 @@ func dialSCTPExtConfig(network string, laddr, raddr *SCTPAddr, options InitMsg, 
 	}
 	if control != nil {
 		rc := rawConn{sockfd: sock}
-		if err = control(network, laddr.String(), rc); err != nil {
+		var localAddressString string
+		if laddr != nil {
+			localAddressString = laddr.String()
+		}
+		if err = control(network, localAddressString, rc); err != nil {
 			return nil, err
 		}
 	}
