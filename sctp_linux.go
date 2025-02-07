@@ -200,7 +200,11 @@ func listenSCTPExtConfig(network string, laddr *SCTPAddr, options InitMsg, contr
 	}
 	if control != nil {
 		rc := rawConn{sockfd: sock}
-		if err = control(network, laddr.String(), rc); err != nil {
+		var localAddressString string
+		if laddr != nil {
+			localAddressString = laddr.String()
+		}
+		if err = control(network, localAddressString, rc); err != nil {
 			return nil, err
 		}
 	}

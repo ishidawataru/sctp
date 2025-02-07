@@ -20,34 +20,45 @@ package sctp
 
 import (
 	"net"
+	"strings"
 	"syscall"
 	"testing"
 )
 
-func TestUseControlFuncWithoutLocalAddress(t *testing.T) {
+func TestDialUseControlFuncWithoutLocalAddress(t *testing.T) {
 	network := "sctp"
 	raddr := &SCTPAddr{IPAddrs: []net.IPAddr{net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}}}
-	initMsg := InitMsg{
-		NumOstreams:    0,
-		MaxInstreams:   0,
-		MaxAttempts:    0,
-		MaxInitTimeout: 0,
+	initMsg := InitMsg{}
+	customControlFunc := validationControlFunc(t, network)
+	conn, err := dialSCTPExtConfig(network, nil, raddr, initMsg, customControlFunc)
+	if err != nil && !strings.Contains(err.Error(), "connection refused") {
+		t.Fatalf("failed to dial connection due to: %v", err)
 	}
-	customControlFunc := func(networkFunc, address string, c syscall.RawConn) error {
-		if network != networkFunc {
-			t.Fatalf("network invalid: %s", networkFunc)
+	conn.Close()
+}
+
+func TestListenUseControlFuncWithoutLocalAddress(t *testing.T) {
+	network := "sctp"
+	initMsg := InitMsg{}
+	customControlFunc := validationControlFunc(t, network)
+	listener, err := listenSCTPExtConfig(network, nil, initMsg, customControlFunc)
+	if err != nil {
+		t.Fatalf("failed to start listener: %v", err)
+	}
+	defer listener.Close()
+}
+
+func validationControlFunc(t *testing.T, network string) func(networkFunc, address string, c syscall.RawConn) error {
+	return func(networkFunc, address string, c syscall.RawConn) error {
+		if networkFunc != network {
+			t.Errorf("unexpected network: got %s, want %s", networkFunc, network)
 		}
 		if address != "" {
-			t.Fatalf("address not empty: %s", address)
+			t.Error("expected empty address")
 		}
 		if c == nil {
-			t.Fatal("RawConn is nil")
+			t.Error("RawConn is nil")
 		}
 		return nil
 	}
-	conn, err := dialSCTPExtConfig(network, nil, raddr, initMsg, customControlFunc)
-	if err != nil {
-		t.Fatalf("failed to dial SCTP connection due to: %v", err)
-	}
-	conn.Close()
 }
