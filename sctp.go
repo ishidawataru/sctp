@@ -636,8 +636,9 @@ func (c *SCTPConn) SetWriteDeadline(t time.Time) error {
 }
 
 type SCTPListener struct {
-	fd int
-	m  sync.Mutex
+	fd                  int
+	m                   sync.Mutex
+	notificationHandler NotificationHandler
 }
 
 func (ln *SCTPListener) Addr() net.Addr {
@@ -723,15 +724,16 @@ type SocketConfig struct {
 	// If Control is not nil it is called after the socket is created but before
 	// it is bound or connected.
 	Control func(network, address string, c syscall.RawConn) error
-
+	// NotificationHandler defines actions taken on received notifications when MSG_NOTIFICATION flag is set.
+	NotificationHandler NotificationHandler
 	// InitMsg is the options to send in the initial SCTP message
 	InitMsg InitMsg
 }
 
 func (cfg *SocketConfig) Listen(net string, laddr *SCTPAddr) (*SCTPListener, error) {
-	return listenSCTPExtConfig(net, laddr, cfg.InitMsg, cfg.Control)
+	return listenSCTPExtConfig(net, laddr, cfg.InitMsg, cfg.Control, cfg.NotificationHandler)
 }
 
 func (cfg *SocketConfig) Dial(net string, laddr, raddr *SCTPAddr) (*SCTPConn, error) {
-	return dialSCTPExtConfig(net, laddr, raddr, cfg.InitMsg, cfg.Control)
+	return dialSCTPExtConfig(net, laddr, raddr, cfg.InitMsg, cfg.Control, cfg.NotificationHandler)
 }
