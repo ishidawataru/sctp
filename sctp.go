@@ -83,7 +83,10 @@ const (
 	SCTP_EVENT_ALL = SCTP_EVENT_DATA_IO | SCTP_EVENT_ASSOCIATION | SCTP_EVENT_ADDRESS | SCTP_EVENT_SEND_FAILURE | SCTP_EVENT_PEER_ERROR | SCTP_EVENT_SHUTDOWN | SCTP_EVENT_PARTIAL_DELIVERY | SCTP_EVENT_ADAPTATION_LAYER | SCTP_EVENT_AUTHENTICATION | SCTP_EVENT_SENDER_DRY
 )
 
-type SCTPNotificationType int
+type (
+	SCTPNotificationType int
+	SCTPAssocID          int32
+)
 
 const (
 	SCTP_SN_TYPE_BASE = SCTPNotificationType(iota + (1 << 15))
@@ -138,6 +141,13 @@ type InitMsg struct {
 	MaxInstreams   uint16
 	MaxAttempts    uint16
 	MaxInitTimeout uint16
+}
+
+// SackTimer Parameters defined in RFC 6458 8.1.19 - SCTP_DELAYED_SACK Delayed Sack Timer sack_timeout
+type SackTimer struct {
+	AssocID       SCTPAssocID
+	SackDelay     uint32
+	SackFrequency uint32
 }
 
 type SndRcvInfo struct {
@@ -503,6 +513,24 @@ func (c *SCTPConn) GetDefaultSentParam() (*SndRcvInfo, error) {
 	optlen := unsafe.Sizeof(*info)
 	_, _, err := getsockopt(c.fd(), SCTP_DEFAULT_SENT_PARAM, uintptr(unsafe.Pointer(info)), uintptr(unsafe.Pointer(&optlen)))
 	return info, err
+}
+
+func (c *SCTPConn) SetSackTimer(timer *SackTimer) error { // SackTimer
+	optlen := unsafe.Sizeof(*timer)
+	_, _, err := setsockopt(c.fd(), SCTP_DELAYED_SACK, uintptr(unsafe.Pointer(timer)), optlen)
+	return err
+}
+
+func (c *SCTPConn) GetSackTimer() (*SackTimer, error) { // SackTimer
+	timer := &SackTimer{}
+	optlen := unsafe.Sizeof(*timer)
+	_, _, err := getsockopt(
+		c.fd(),
+		SCTP_DELAYED_SACK,
+		uintptr(unsafe.Pointer(timer)),
+		uintptr(unsafe.Pointer(&optlen)),
+	)
+	return timer, err
 }
 
 func (c *SCTPConn) Getsockopt(optname, optval, optlen uintptr) (uintptr, uintptr, error) {
