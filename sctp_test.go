@@ -16,6 +16,7 @@
 package sctp
 
 import (
+	"bytes"
 	"io"
 	"net"
 	"reflect"
@@ -175,4 +176,113 @@ func TestSCTPCloseRecv(t *testing.T) {
 		t.Fatalf("close failed: %v", err)
 	}
 	wg.Wait()
+}
+
+func TestToNetworkByteOrderBuf(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    interface{}
+		expected []byte
+	}{
+		{
+			name:     "uint16",
+			input:    uint16(0x1234),
+			expected: []byte{0x12, 0x34},
+		},
+		{
+			name:     "uint32",
+			input:    uint32(0x12345678),
+			expected: []byte{0x12, 0x34, 0x56, 0x78},
+		},
+		{
+			name:     "uint64",
+			input:    uint64(0x123456789ABCDEF0),
+			expected: []byte{0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0},
+		},
+		{
+			name:     "int16",
+			input:    int16(0x1234),
+			expected: []byte{0x12, 0x34},
+		},
+		{
+			name:     "int32",
+			input:    int32(0x12345678),
+			expected: []byte{0x12, 0x34, 0x56, 0x78},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := toNetworkByteOrderBuf(tt.input)
+			if !bytes.Equal(result, tt.expected) {
+				t.Errorf("toNetworkByteOrderBuf(%v) = %v, want %v", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFromNetworkByteOrderBuf(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []byte
+		output   interface{}
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name:     "uint16",
+			input:    []byte{0x12, 0x34},
+			output:   new(uint16),
+			expected: uint16(0x1234),
+			wantErr:  false,
+		},
+		{
+			name:     "uint32",
+			input:    []byte{0x12, 0x34, 0x56, 0x78},
+			output:   new(uint32),
+			expected: uint32(0x12345678),
+			wantErr:  false,
+		},
+		{
+			name:     "uint64",
+			input:    []byte{0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0},
+			output:   new(uint64),
+			expected: uint64(0x123456789ABCDEF0),
+			wantErr:  false,
+		},
+		{
+			name:     "int16",
+			input:    []byte{0x12, 0x34},
+			output:   new(int16),
+			expected: int16(0x1234),
+			wantErr:  false,
+		},
+		{
+			name:     "int32",
+			input:    []byte{0x12, 0x34, 0x56, 0x78},
+			output:   new(int32),
+			expected: int32(0x12345678),
+			wantErr:  false,
+		},
+		{
+			name:     "invalid input length",
+			input:    []byte{0x12},
+			output:   new(uint16),
+			expected: uint16(0),
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := fromNetworkByteOrderBuf(tt.output, tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("fromNetworkByteOrderBuf() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && !reflect.DeepEqual(reflect.ValueOf(tt.output).Elem().Interface(), tt.expected) {
+				t.Errorf("fromNetworkByteOrderBuf() = %v, want %v", reflect.ValueOf(tt.output).Elem().Interface(), tt.expected)
+			}
+		})
+	}
 }
