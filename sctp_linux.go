@@ -19,6 +19,7 @@
 package sctp
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"runtime"
@@ -80,7 +81,7 @@ func (r rawConn) Write(f func(fd uintptr) (done bool)) error {
 func (c *SCTPConn) SCTPWrite(b []byte, info *SndRcvInfo) (int, error) {
 	var cbuf []byte
 	if info != nil {
-		cmsgBuf := toBuf(info)
+		cmsgBuf := toNetworkByteOrderBuf(info)
 		hdr := &syscall.Cmsghdr{
 			Level: syscall.IPPROTO_SCTP,
 			Type:  SCTP_CMSG_SNDRCV,
@@ -103,7 +104,11 @@ func parseSndRcvInfo(b []byte) (*SndRcvInfo, error) {
 		if m.Header.Level == syscall.IPPROTO_SCTP {
 			switch m.Header.Type {
 			case SCTP_CMSG_SNDRCV:
-				return (*SndRcvInfo)(unsafe.Pointer(&m.Data[0])), nil
+				var dst SndRcvInfo
+				if err := fromNetworkByteOrderBuf(&dst, m.Data); err != nil {
+					return nil, fmt.Errorf("failed to parse SndRcvInfo: %v", err)
+				}
+				return &dst, nil
 			}
 		}
 	}

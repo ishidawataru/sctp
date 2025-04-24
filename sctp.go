@@ -213,6 +213,17 @@ func toBuf(v interface{}) []byte {
 	return buf.Bytes()
 }
 
+func toNetworkByteOrderBuf(v interface{}) []byte {
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.BigEndian, v)
+	return buf.Bytes()
+}
+
+func fromNetworkByteOrderBuf(v interface{}, src []byte) (err error) {
+	buf := bytes.NewBuffer(src)
+	return binary.Read(buf, binary.BigEndian, v)
+}
+
 func htons(h uint16) uint16 {
 	if nativeEndian == binary.LittleEndian {
 		return (h << 8 & 0xff00) | (h >> 8 & 0xff)
