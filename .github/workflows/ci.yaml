@@ -9,12 +9,12 @@ jobs:
   test:
     strategy:
       matrix:
-        go: [1.14.x, 1.15.x, 1.16.x]
+        go: [1.22.x, 1.23.x, 1.24.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-go@v2
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
       with:
           go-version: ${{ matrix.go }}
     - run: go test -race ./...
