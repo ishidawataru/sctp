@@ -152,7 +152,7 @@ type SackTimer struct {
 
 // PeerAddrinfo Parameters defined in RFC 6458 8.2.2 - Peer Address Information (SCTP_GET_PEER_ADDR_INFO)
 type PeerAddrinfo struct {
-	AssocID uint32
+	AssocID SCTPAssocID
 	Address [128]byte // if needed from here, retrieve using resolveFromRawAddr(unsafe.Pointer(&PeerAddrinfo.Address), 1), or get it from *SCTPConn.SCTPGetPrimaryPeerAddr()
 	State   int32
 	CWND    uint32
@@ -163,7 +163,7 @@ type PeerAddrinfo struct {
 
 // Status Parameters defined in RFC 6458 8.2.1 - Association Status (SCTP_STATUS)
 type Status struct {
-	AssocID            uint32
+	AssocID            SCTPAssocID
 	State              int32
 	RWND               uint32
 	Unackdata          uint16
