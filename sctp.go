@@ -150,6 +150,30 @@ type SackTimer struct {
 	SackFrequency uint32
 }
 
+// PeerAddrinfo Parameters defined in RFC 6458 8.2.2 - Peer Address Information (SCTP_GET_PEER_ADDR_INFO)
+type PeerAddrinfo struct {
+	AssocID uint32
+	Address [128]byte // if needed from here, retrieve using resolveFromRawAddr(unsafe.Pointer(&PeerAddrinfo.Address), 1), or get it from *SCTPConn.SCTPGetPrimaryPeerAddr()
+	State   int32
+	CWND    uint32
+	SRTT    uint32
+	RTO     uint32
+	MTU     uint32
+}
+
+// Status Parameters defined in RFC 6458 8.2.1 - Association Status (SCTP_STATUS)
+type Status struct {
+	AssocID            uint32
+	State              int32
+	RWND               uint32
+	Unackdata          uint16
+	Penddata           uint16
+	Instreams          uint16
+	Ostreams           uint16
+	FragmentationPoint uint32
+	PrimaryPeerAddr    PeerAddrinfo
+}
+
 type SndRcvInfo struct {
 	Stream  uint16
 	SSN     uint16
@@ -531,6 +555,18 @@ func (c *SCTPConn) GetSackTimer() (*SackTimer, error) { // SackTimer
 		uintptr(unsafe.Pointer(&optlen)),
 	)
 	return timer, err
+}
+
+func (c *SCTPConn) GetStatus() (*Status, error) { // Status
+	sctpStatus := &Status{}
+	optlen := unsafe.Sizeof(*sctpStatus)
+	_, _, err := getsockopt(
+		c.fd(),
+		SCTP_STATUS,
+		uintptr(unsafe.Pointer(sctpStatus)),
+		uintptr(unsafe.Pointer(&optlen)),
+	)
+	return sctpStatus, err
 }
 
 func (c *SCTPConn) Getsockopt(optname, optval, optlen uintptr) (uintptr, uintptr, error) {

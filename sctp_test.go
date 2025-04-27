@@ -16,13 +16,16 @@
 package sctp
 
 import (
+	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"reflect"
 	"runtime"
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 )
 
 type resolveSCTPAddrTest struct {
@@ -175,4 +178,221 @@ func TestSCTPCloseRecv(t *testing.T) {
 		t.Fatalf("close failed: %v", err)
 	}
 	wg.Wait()
+}
+
+func TestGetStatus(t *testing.T) {
+	testCases := []struct {
+		name          string
+		maxInstreams  uint16
+		streamToWrite uint16
+		expectError   bool
+	}{
+		{
+			name:          "Write to stream within MaxInstreams limit",
+			maxInstreams:  2,
+			streamToWrite: 1, // must be (maxInstreams-1) to work without an error
+			expectError:   false,
+		},
+		{
+			name:          "Write to stream at MaxInstreams limit",
+			maxInstreams:  2,
+			streamToWrite: 2,
+			expectError:   true, // Usually SCTP stream IDs are 0-indexed, so stream 2 is the 3rd stream
+		},
+		{
+			name:          "Write to stream exceeding MaxInstreams limit",
+			maxInstreams:  2,
+			streamToWrite: 3,
+			expectError:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a random port to avoid conflicts when running tests in parallel
+			port := 5000 + rand.Intn(1000)
+			addr, err := ResolveSCTPAddr("sctp", fmt.Sprintf("127.0.0.1:%d", port))
+			if err != nil {
+				t.Fatalf("Failed to resolve address: %v", err)
+			}
+
+			// Create server/listener with limited in- and out-streams
+			ln, err := ListenSCTPExt("sctp", addr,
+				InitMsg{
+					NumOstreams:  0x05,
+					MaxInstreams: tc.maxInstreams, // the peer side outStream will be limited by this side inStream
+				},
+			)
+			if err != nil {
+				t.Fatalf("Failed to create listener: %v", err)
+			}
+			defer ln.Close()
+
+			// Channel to communicate server errors
+			errChan := make(chan error, 1)
+
+			go func() {
+				// Accept a connection session on the listener
+				_, err := ln.Accept()
+				if err != nil {
+					errChan <- fmt.Errorf("server accept error: %v", err)
+					return
+				}
+				errChan <- nil
+			}()
+
+			// Create a client with default streams
+			c, err := DialSCTP("sctp", nil, ln.Addr().(*SCTPAddr))
+			if err != nil {
+				t.Fatalf("Failed to dial: %v", err)
+			}
+			defer c.Close()
+
+			// Check for server errors
+			select {
+			case err := <-errChan:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(100 * time.Millisecond):
+				// Continue if no immediate error
+			}
+
+			// Get the status
+			status, err := c.GetStatus()
+			if err != nil {
+				t.Fatalf("Failed to get SCTP status: %v", err)
+			}
+			t.Logf("In streams: %d, Out streams: %d", status.Instreams, status.Ostreams)
+
+			// Verify the negotiated values
+			if status.Ostreams > tc.maxInstreams {
+				t.Errorf("Expected at most %d in-streams, got %d", tc.maxInstreams, status.Ostreams)
+			}
+
+			// Write a message to the specific stream
+			_, err = c.SCTPWrite([]byte("hello"),
+				&SndRcvInfo{
+					PPID:   0x03000000,
+					Stream: tc.streamToWrite,
+				})
+
+			// Check if the error status matches what we expect
+			if tc.expectError && err == nil {
+				t.Errorf("Expected error when writing to stream %d with MaxInstreams=%d, but got none",
+					tc.streamToWrite, tc.maxInstreams)
+			}
+			if !tc.expectError && err != nil {
+				t.Errorf("Expected no error when writing to stream %d with MaxInstreams=%d, but got: %v",
+					tc.streamToWrite, tc.maxInstreams, err)
+			}
+		})
+	}
+}
+
+func TestGetStatusUsage(t *testing.T) {
+	// Create a random port to avoid conflicts when running tests in parallel
+	port := 5000 + rand.Intn(1000)
+	addr, err := ResolveSCTPAddr("sctp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		t.Fatalf("Failed to resolve address: %v", err)
+	}
+
+	maxInStreams := 0x05
+	// Create server/listener with limited in- and out-streams
+	ln, err := ListenSCTPExt("sctp", addr,
+		InitMsg{
+			NumOstreams:  0x10,
+			MaxInstreams: uint16(maxInStreams), // the peer side outStream will be limited by this side inStream
+		},
+	)
+	if err != nil {
+		t.Fatalf("Failed to create listener: %v", err)
+	}
+	defer ln.Close()
+
+	// Channel to communicate server errors
+	errChan := make(chan error, 1)
+
+	go func() {
+		// Accept a connection session on the listener
+		_, err := ln.Accept()
+		if err != nil {
+			errChan <- fmt.Errorf("server accept error: %v", err)
+			return
+		}
+		errChan <- nil
+	}()
+
+	// Create a client with default streams
+	c, err := DialSCTP("sctp", nil, ln.Addr().(*SCTPAddr))
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer c.Close()
+
+	// Check for server errors
+	select {
+	case err := <-errChan:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		// Continue if no immediate error
+	}
+
+	// Get the status
+	status, err := c.GetStatus()
+	if err != nil {
+		t.Fatalf("Failed to get SCTP status: %v", err)
+	}
+	t.Logf("In streams: %d, Out streams: %d", status.Instreams, status.Ostreams)
+
+	testCases := []struct {
+		name          string
+		streamToWrite uint16
+		expectError   bool
+	}{
+		{
+			name:          "Write to stream within MaxOutstrmslimit",
+			streamToWrite: 0, // must be (maxInstreams-1) to work without an error
+			expectError:   false,
+		},
+		{
+			name:          "Write to stream within MaxOutstrms limit",
+			streamToWrite: 1,
+			expectError:   false, // Usually SCTP stream IDs are 0-indexed, so stream 2 is the 3rd stream
+		},
+		{
+			name:          "Write to stream at MaxOutstrms limit",
+			streamToWrite: status.Ostreams - 1,
+			expectError:   false,
+		},
+		{
+			name:          "Write to stream exceeding MaxOutstrms limit",
+			streamToWrite: status.Ostreams,
+			expectError:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Write a message to the specific stream
+			_, err = c.SCTPWrite([]byte("hello"),
+				&SndRcvInfo{
+					PPID:   0x03000000,
+					Stream: tc.streamToWrite, // max allowed stream without an error
+				})
+
+			// Check if the error status matches what we expect
+			if tc.expectError && err == nil {
+				t.Errorf("Expected error when writing to stream %d with MaxInstreams=%d, but got none",
+					tc.streamToWrite, maxInStreams)
+			}
+			if !tc.expectError && err != nil {
+				t.Errorf("Expected no error when writing to stream %d with MaxInstreams=%d, but got: %v",
+					tc.streamToWrite, maxInStreams, err)
+			}
+		})
+	}
 }
