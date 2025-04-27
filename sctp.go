@@ -150,21 +150,44 @@ type SackTimer struct {
 	SackFrequency uint32
 }
 
+type PeerState int32
+
+const (
+	SCTP_UNCONFIRMED PeerState = iota
+	SCTP_ACTIVE
+	SCTP_INACTIVE
+)
+
 // PeerAddrinfo Parameters defined in RFC 6458 8.2.2 - Peer Address Information (SCTP_GET_PEER_ADDR_INFO)
 type PeerAddrinfo struct {
 	AssocID SCTPAssocID
 	Address [128]byte // if needed from here, retrieve using resolveFromRawAddr(unsafe.Pointer(&PeerAddrinfo.Address), 1), or get it from *SCTPConn.SCTPGetPrimaryPeerAddr()
-	State   int32
+	State   PeerState
 	CWND    uint32
 	SRTT    uint32
 	RTO     uint32
 	MTU     uint32
 }
 
+type StatusState int32
+
+const (
+	SCTP_CLOSED StatusState = iota
+	SCTP_BOUND
+	SCTP_LISTEN
+	SCTP_COOKIE_WAIT
+	SCTP_COOKIE_ECHOED
+	SCTP_ESTABLISHED
+	SCTP_SHUTDOWN_PENDING
+	SCTP_SHUTDOWN_SENT
+	SCTP_SHUTDOWN_RECEIVED
+	SCTP_SHUTDOWN_ACK_SENT
+)
+
 // Status Parameters defined in RFC 6458 8.2.1 - Association Status (SCTP_STATUS)
 type Status struct {
 	AssocID            SCTPAssocID
-	State              int32
+	State              StatusState
 	RWND               uint32
 	Unackdata          uint16
 	Penddata           uint16
