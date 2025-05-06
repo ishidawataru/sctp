@@ -198,10 +198,17 @@ type Status struct {
 }
 
 type SndRcvInfo struct {
-	Stream  uint16
-	SSN     uint16
-	Flags   uint16
-	_       uint16
+	Stream uint16
+	SSN    uint16
+	Flags  uint16
+	_      uint16
+	// This parameter’s endianness is not specified in the SCTP standards, but as is the case with Wireshark, it seems
+	// that it is generally treated as network byte order.
+	//
+	// IANA defines them as integer values, hence we would assume that our users would use the trouble-free host
+	// byte order. So conversions will be done before sending and after receiving to ease the life of our users (a.i.
+	// use directly 1 for IUA, 2 for M2UA, etc will result in 0x00000001 of IUA, 0x000000002 for M2UA, etc on the wire,
+	// regardless of your native endianness).
 	PPID    uint32
 	Context uint32
 	TTL     uint32
@@ -268,6 +275,15 @@ func htons(h uint16) uint16 {
 }
 
 var ntohs = htons
+
+func htonl(h uint32) uint32 {
+	if nativeEndian == binary.LittleEndian {
+		return (h << 24 & 0xff000000) | (h << 8 & 0x00ff0000) | (h >> 8 & 0x0000ff00) | (h >> 24 & 0x000000ff)
+	}
+	return h
+}
+
+var ntohl = htonl
 
 // setInitOpts sets options for an SCTP association initialization
 // see https://tools.ietf.org/html/rfc4960#page-25
