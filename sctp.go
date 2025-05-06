@@ -155,8 +155,10 @@ type SndRcvInfo struct {
 	SSN    uint16
 	Flags  uint16
 	_      uint16
-	// This parameter's endianness is not specified in the SCTP standards, while on the wire it seems to be network byte
-	// order. IANA defines them as integer values, hence we would assume that our users would use the trouble-free host
+	// This parameter’s endianness is not specified in the SCTP standards, but as is the case with Wireshark, it seems
+	// that it is generally treated as network byte order.
+	//
+	// IANA defines them as integer values, hence we would assume that our users would use the trouble-free host
 	// byte order. So conversions will be done before sending and after receiving to ease the life of our users (a.i.
 	// use directly 1 for IUA, 2 for M2UA, etc will result in 0x00000001 of IUA, 0x000000002 for M2UA, etc on the wire,
 	// regardless of your native endianness).
