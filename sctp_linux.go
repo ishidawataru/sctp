@@ -77,6 +77,14 @@ func (r rawConn) Write(f func(fd uintptr) (done bool)) error {
 	panic("not implemented")
 }
 
+func (c *SCTPConn) SyscallConn() (syscall.RawConn, error) {
+	fd := c.fd()
+	if fd < 0 {
+		return nil, syscall.EINVAL
+	}
+	return &rawConn{sockfd: int(fd)}, nil
+}
+
 func (c *SCTPConn) SCTPWrite(b []byte, info *SndRcvInfo) (int, error) {
 	var cbuf []byte
 	if info != nil {
