@@ -100,3 +100,47 @@ func validationControlFunc(t *testing.T, network string) func(networkFunc, addre
 		return nil
 	}
 }
+
+func TestSyscallConn(t *testing.T) {
+	network := "sctp"
+	addr := &SCTPAddr{IPAddrs: []net.IPAddr{{IP: net.IPv4(127, 0, 0, 1)}}, Port: 54321}
+	_, err := ListenSCTP(network, addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := DialSCTP(network, nil, addr)
+	if err != nil {
+		t.Fatalf("Failed to create SCTP connection: %v", err)
+	}
+	defer conn.Close()
+
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if raw == nil {
+		t.Fatalf("Expected non-nil RawConn, got nil")
+	}
+
+	controlCalled := false
+	err = raw.Control(func(fd uintptr) {
+		controlCalled = true
+	})
+	if err != nil {
+		t.Fatalf("Control failed: %v", err)
+	}
+	if !controlCalled {
+		t.Errorf("Control callback was not called")
+	}
+
+	t.Run("after close", func(t *testing.T) {
+		conn.Close()
+		raw, err := conn.SyscallConn()
+		if err != syscall.EINVAL {
+			t.Errorf("Expected EINVAL, got %v", err)
+		}
+		if raw != nil {
+			t.Errorf("Expected nil RawConn, got %v", raw)
+		}
+	})
+}
