@@ -269,6 +269,14 @@ func (ln *SCTPListener) Close() error {
 	return syscall.Close(ln.fd)
 }
 
+func (ln *SCTPListener) SyscallConn() (syscall.RawConn, error) {
+	fd := ln.fd
+	if fd < 0 {
+		return nil, syscall.EINVAL
+	}
+	return &rawConn{sockfd: int(fd)}, nil
+}
+
 // DialSCTP - bind socket to laddr (if given) and connect to raddr
 func DialSCTP(net string, laddr, raddr *SCTPAddr) (*SCTPConn, error) {
 	return DialSCTPExt(net, laddr, raddr, InitMsg{NumOstreams: SCTP_MAX_STREAM})
