@@ -104,9 +104,17 @@ func validationControlFunc(t *testing.T, network string) func(networkFunc, addre
 func TestSyscallConn(t *testing.T) {
 	network := "sctp"
 	addr := &SCTPAddr{IPAddrs: []net.IPAddr{{IP: net.IPv4(127, 0, 0, 1)}}, Port: 54321}
-	_, err := ListenSCTP(network, addr)
+	listener, err := ListenSCTP(network, addr)
 	if err != nil {
 		t.Fatal(err)
+	}
+	defer listener.Close()
+	raw, err := listener.SyscallConn()
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if raw == nil {
+		t.Fatalf("Expected non-nil RawConn, got nil")
 	}
 	conn, err := DialSCTP(network, nil, addr)
 	if err != nil {
@@ -114,7 +122,7 @@ func TestSyscallConn(t *testing.T) {
 	}
 	defer conn.Close()
 
-	raw, err := conn.SyscallConn()
+	raw, err = conn.SyscallConn()
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
