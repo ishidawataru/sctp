@@ -21,6 +21,7 @@ package sctp
 import (
 	"io"
 	"net"
+	"os"
 	"runtime"
 	"sync/atomic"
 	"syscall"
@@ -251,6 +252,20 @@ func listenSCTPExtConfig(network string, laddr *SCTPAddr, options InitMsg, contr
 			notificationHandler: notificationHandler,
 		},
 		nil
+}
+
+// FileListener takes a file, dup's the underlying file descriptor, and returns
+// a SCTPListener created from the dup'd fd.
+func FileListener(file *os.File) (*SCTPListener, error) {
+	r1, _, err := syscall.Syscall(syscall.SYS_FCNTL, file.Fd(), syscall.F_DUPFD_CLOEXEC, 0)
+	if err != 0 {
+		return nil, os.NewSyscallError("fcntl", err)
+	}
+
+	return &SCTPListener{
+		fd:                  int(r1),
+		notificationHandler: nil,
+	}, nil
 }
 
 // AcceptSCTP waits for and returns the next SCTP connection to the listener.
