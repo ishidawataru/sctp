@@ -21,6 +21,7 @@ package sctp
 import (
 	"errors"
 	"net"
+	"os"
 	"strings"
 	"syscall"
 	"testing"
@@ -151,4 +152,41 @@ func TestSyscallConn(t *testing.T) {
 			t.Errorf("Expected nil RawConn, got %v", raw)
 		}
 	})
+}
+
+func TestSCTPListenerNameFromFd(t *testing.T) {
+	addr := &SCTPAddr{IPAddrs: []net.IPAddr{{IP: net.IPv4(127, 0, 0, 1)}}, Port: 54321}
+	ln, err := ListenSCTP("sctp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	la, ok := ln.Addr().(*SCTPAddr)
+	if !ok || la.Port == 0 {
+		t.Fatalf("got %v; expected a proper address with non-zero port number", la)
+	}
+
+	raw, err := ln.SyscallConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var fln *SCTPListener
+	raw.Control(func(fd uintptr) {
+		fln, err = FileListener(os.NewFile(uintptr(fd), "listener"))
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	defer fln.Close()
+
+	fla, ok := fln.Addr().(*SCTPAddr)
+	if !ok || fla.Port == 0 {
+		t.Fatalf("got %v; expected a proper address with non-zero port number", la)
+	}
+
+	if la.String() != fla.String() {
+		t.Fatalf("got %v; expected %v", la.String(), fla.String())
+	}
 }
