@@ -262,6 +262,14 @@ func FileListener(file *os.File) (*SCTPListener, error) {
 		return nil, os.NewSyscallError("fcntl", err)
 	}
 
+	// Clear the non-blocking flag on the dup'd fd. This is needed to make sure
+	// an SCTPListener created with FileListener will behave like other
+	// listeners. Namely, its Accept methods will block until a connection is
+	// available.
+	if _, _, err := syscall.Syscall(syscall.SYS_FCNTL, r1, syscall.F_SETFL, 0); err != 0 {
+		return nil, os.NewSyscallError("fcntl", err)
+	}
+
 	return &SCTPListener{
 		fd:                  int(r1),
 		notificationHandler: nil,
