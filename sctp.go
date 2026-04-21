@@ -575,6 +575,24 @@ func (c *SCTPConn) GetDefaultSentParam() (*SndRcvInfo, error) {
 	return info, err
 }
 
+func (c *SCTPConn) SetNoDelay(optval int) error {
+	optlen := unsafe.Sizeof(optval)
+	_, _, err := setsockopt(c.fd(), SCTP_NODELAY, uintptr(unsafe.Pointer(&optval)), optlen)
+	return err
+}
+
+func (c *SCTPConn) GetNoDelay() (int, error) {
+	optval := 0
+	optlen := unsafe.Sizeof(optval)
+	_, _, err := getsockopt(
+		c.fd(),
+		SCTP_NODELAY,
+		uintptr(unsafe.Pointer(&optval)),
+		uintptr(unsafe.Pointer(&optlen)),
+	)
+	return optval, err
+}
+
 func (c *SCTPConn) SetSackTimer(timer *SackTimer) error { // SackTimer
 	optlen := unsafe.Sizeof(*timer)
 	_, _, err := setsockopt(c.fd(), SCTP_DELAYED_SACK, uintptr(unsafe.Pointer(timer)), optlen)
