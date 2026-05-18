@@ -18,6 +18,7 @@ package sctp
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -28,6 +29,11 @@ import (
 	"time"
 	"unsafe"
 )
+
+// ErrListenerClosed is returned by SCTPListener.Accept and AcceptSCTP when the
+// listener has been closed, either before the call or while it was blocked in
+// the kernel. Compare with == (errors.Is is not available on Go 1.12).
+var ErrListenerClosed = errors.New("sctp: use of closed listener")
 
 const (
 	SOL_SCTP = 132
@@ -736,13 +742,23 @@ func (c *SCTPConn) SetWriteDeadline(t time.Time) error {
 }
 
 type SCTPListener struct {
-	fd                  int
+	_fd                 int32 // -1 once Close has run; read/written via sync/atomic
 	m                   sync.Mutex
 	notificationHandler NotificationHandler
 }
 
+// fd returns the current listener file descriptor or -1 if the listener has
+// been closed. Reads are atomic so callers can detect concurrent Close.
+func (ln *SCTPListener) fd() int {
+	return int(atomic.LoadInt32(&ln._fd))
+}
+
 func (ln *SCTPListener) Addr() net.Addr {
-	laddr, err := sctpGetAddrs(ln.fd, 0, SCTP_GET_LOCAL_ADDRS)
+	fd := ln.fd()
+	if fd < 0 {
+		return nil
+	}
+	laddr, err := sctpGetAddrs(fd, 0, SCTP_GET_LOCAL_ADDRS)
 	if err != nil {
 		return nil
 	}
