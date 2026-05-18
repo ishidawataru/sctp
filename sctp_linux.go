@@ -248,7 +248,7 @@ func listenSCTPExtConfig(network string, laddr *SCTPAddr, options InitMsg, contr
 		return nil, err
 	}
 	return &SCTPListener{
-			fd:                  sock,
+			_fd:                 int32(sock),
 			notificationHandler: notificationHandler,
 		},
 		nil
@@ -271,33 +271,60 @@ func FileListener(file *os.File) (*SCTPListener, error) {
 	}
 
 	return &SCTPListener{
-		fd:                  int(r1),
+		_fd:                 int32(r1),
 		notificationHandler: nil,
 	}, nil
 }
 
 // AcceptSCTP waits for and returns the next SCTP connection to the listener.
+//
+// If the listener has been closed (either before AcceptSCTP was called or
+// concurrently while it was blocked in accept4), AcceptSCTP returns
+// (nil, ErrListenerClosed) instead of leaking the bare syscall.EBADF / EINVAL
+// returned by the kernel on a torn-down fd.
 func (ln *SCTPListener) AcceptSCTP() (*SCTPConn, error) {
-	fd, _, err := syscall.Accept4(ln.fd, 0)
-	return NewSCTPConn(fd, ln.notificationHandler), err
+	fd := atomic.LoadInt32(&ln._fd)
+	if fd < 0 {
+		return nil, ErrListenerClosed
+	}
+	nfd, _, err := syscall.Accept4(int(fd), 0)
+	if err != nil {
+		// If Close ran concurrently, surface a clean ErrListenerClosed.
+		if atomic.LoadInt32(&ln._fd) < 0 {
+			return nil, ErrListenerClosed
+		}
+		return nil, err
+	}
+	return NewSCTPConn(nfd, ln.notificationHandler), nil
 }
 
 // Accept waits for and returns the next connection connection to the listener.
 func (ln *SCTPListener) Accept() (net.Conn, error) {
-	return ln.AcceptSCTP()
+	c, err := ln.AcceptSCTP()
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
+// Close releases the listener fd. The first call returns the result of the
+// underlying syscall.Close; subsequent calls return syscall.EBADF without
+// touching the fd, so a reused fd number cannot be closed by mistake.
 func (ln *SCTPListener) Close() error {
-	syscall.Shutdown(ln.fd, syscall.SHUT_RDWR)
-	return syscall.Close(ln.fd)
+	fd := atomic.SwapInt32(&ln._fd, -1)
+	if fd < 0 {
+		return syscall.EBADF
+	}
+	syscall.Shutdown(int(fd), syscall.SHUT_RDWR)
+	return syscall.Close(int(fd))
 }
 
 func (ln *SCTPListener) SyscallConn() (syscall.RawConn, error) {
-	fd := ln.fd
+	fd := ln.fd()
 	if fd < 0 {
 		return nil, syscall.EINVAL
 	}
-	return &rawConn{sockfd: int(fd)}, nil
+	return &rawConn{sockfd: fd}, nil
 }
 
 // DialSCTP - bind socket to laddr (if given) and connect to raddr
