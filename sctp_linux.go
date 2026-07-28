@@ -25,6 +25,7 @@ import (
 	"runtime"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -152,19 +153,122 @@ func (c *SCTPConn) SCTPRead(b []byte) (int, *SndRcvInfo, error) {
 	}
 }
 
+// Close closes the SCTP connection gracefully with a timeout fallback.
+//
+// It initiates a graceful shutdown by sending a SHUTDOWN chunk to the peer
+// and waits up to 3 seconds for the peer to acknowledge (SHUTDOWN-ACK).
+// If the peer responds, the connection closes gracefully and resources are
+// released immediately. If the peer does not respond within the timeout
+// (e.g., network failure or unreachable peer), an ABORT chunk is sent to
+// forcefully terminate the association and release resources.
+//
+// This ensures that Close always returns promptly and releases resources,
+// avoiding the EADDRINUSE "Address already in use" error that can occur when the kernel
+// still occupies the resource.
+//
+// For immediate termination without waiting, use Abort() instead.
 func (c *SCTPConn) Close() error {
-	if c != nil {
-		fd := atomic.SwapInt32(&c._fd, -1)
-		if fd > 0 {
-			info := &SndRcvInfo{
-				Flags: SCTP_EOF,
-			}
-			c.SCTPWrite(nil, info)
-			syscall.Shutdown(int(fd), syscall.SHUT_RDWR)
-			return syscall.Close(int(fd))
-		}
+	return c.CloseWithTimeout(closeTimeout)
+}
+
+// closeTimeout is how long Close waits for the peer to acknowledge a
+// shutdown before falling back to an ABORT. It is a compromise: long enough
+// that a peer on a congested link can still complete the handshake, short
+// enough that a server tearing down many associations is not held up by a
+// peer that will never answer. Use CloseWithTimeout to choose another value.
+const closeTimeout = 3 * time.Second
+
+// establishTimeout bounds the same wait on the error paths of dial and
+// listen. Those sockets have no established association to shut down
+// gracefully, so the wait exists only to let the kernel release the address.
+const establishTimeout = 1 * time.Second
+
+// CloseWithTimeout is Close with a caller-chosen grace period.
+//
+// A zero or negative timeout skips the wait entirely and terminates the
+// association immediately, which is equivalent to Abort.
+func (c *SCTPConn) CloseWithTimeout(timeout time.Duration) error {
+	if c == nil {
+		return syscall.EBADF
 	}
-	return syscall.EBADF
+	fd := atomic.SwapInt32(&c._fd, -1)
+	// Zero is a valid descriptor: a process that has closed stdin can be
+	// handed fd 0 for a socket. Guarding with "fd > 0" leaked it.
+	if fd < 0 {
+		return syscall.EBADF
+	}
+	return closeSctpSocket(int(fd), timeout)
+}
+
+func closeSctpSocket(fd int, timeout time.Duration) error {
+	if timeout <= 0 {
+		return abortSctpSocket(fd)
+	}
+
+	// Send SHUTDOWN to initiate graceful shutdown. A failure here means no
+	// graceful shutdown is possible, so skip the wait and abort instead of
+	// blocking for a SHUTDOWN-ACK that cannot arrive.
+	if err := syscall.Shutdown(fd, syscall.SHUT_RDWR); err != nil {
+		return abortSctpSocket(fd)
+	}
+
+	// Wait for graceful shutdown to complete.
+	// If peer responds, Read returns immediately with ENOTCONN.
+	// If peer is unreachable, Read times out after the configured duration.
+	//
+	// The timeout is what bounds this read, so if it cannot be programmed the
+	// read would block indefinitely. Abort rather than risk that.
+	tv := syscall.NsecToTimeval(timeout.Nanoseconds())
+	if err := syscall.SetsockoptTimeval(fd, syscall.SOL_SOCKET, syscall.SO_RCVTIMEO,
+		&tv); err != nil {
+		return abortSctpSocket(fd)
+	}
+	var buf [1]byte
+	// The result is deliberately ignored: this read exists to wait for the
+	// peer's SHUTDOWN-ACK, and any outcome (data, ENOTCONN, timeout) means
+	// the wait is over.
+	_, _ = syscall.Read(fd, buf[:])
+
+	// Set linger=0 so close() sends ABORT if handshake didn't complete,
+	// or just releases resources if it did.
+	if err := syscall.SetsockoptLinger(fd, syscall.SOL_SOCKET, syscall.SO_LINGER,
+		&syscall.Linger{Onoff: 1, Linger: 0}); err != nil {
+		// Without linger the close may leave the association lingering, but
+		// the descriptor must still be released.
+		if cerr := syscall.Close(fd); cerr != nil {
+			return cerr
+		}
+		return err
+	}
+	return syscall.Close(fd)
+}
+
+// abortSctpSocket terminates the association immediately and releases fd.
+func abortSctpSocket(fd int) error {
+	// Setting SO_LINGER with l_onoff=1 and l_linger=0 causes the kernel to
+	// send an ABORT chunk instead of SHUTDOWN when closing.
+	lerr := syscall.SetsockoptLinger(fd, syscall.SOL_SOCKET, syscall.SO_LINGER,
+		&syscall.Linger{Onoff: 1, Linger: 0})
+	if err := syscall.Close(fd); err != nil {
+		return err
+	}
+	return lerr
+}
+
+// Abort terminates the SCTP association immediately by sending an ABORT chunk.
+// Unlike Close(), this does not perform a graceful shutdown handshake.
+// Use this when you need immediate resource release without waiting for
+// the peer to acknowledge the shutdown (e.g., when the peer is unreachable).
+func (c *SCTPConn) Abort() error {
+	if c == nil {
+		return syscall.EBADF
+	}
+	fd := atomic.SwapInt32(&c._fd, -1)
+	// See CloseWithTimeout: fd 0 is valid and must not be skipped.
+	if fd < 0 {
+		return syscall.EBADF
+	}
+	return abortSctpSocket(int(fd))
 }
 
 func (c *SCTPConn) SetWriteBuffer(bytes int) error {
@@ -208,7 +312,7 @@ func listenSCTPExtConfig(network string, laddr *SCTPAddr, options InitMsg, contr
 	// close socket on error
 	defer func() {
 		if err != nil {
-			syscall.Close(sock)
+			_ = closeSctpSocket(sock, establishTimeout)
 		}
 	}()
 	if err = setDefaultSockopts(sock, af, ipv6only); err != nil {
@@ -325,7 +429,7 @@ func dialSCTPExtConfig(network string, laddr, raddr *SCTPAddr, options InitMsg, 
 	// close socket on error
 	defer func() {
 		if err != nil {
-			syscall.Close(sock)
+			_ = closeSctpSocket(sock, establishTimeout)
 		}
 	}()
 	if err = setDefaultSockopts(sock, af, ipv6only); err != nil {
@@ -354,7 +458,7 @@ func dialSCTPExtConfig(network string, laddr, raddr *SCTPAddr, options InitMsg, 
 				laddr.IPAddrs = append(laddr.IPAddrs, net.IPAddr{IP: net.IPv6zero})
 			}
 		}
-		err = SCTPBind(sock, laddr, SCTP_BINDX_ADD_ADDR)
+		err = SCTPBind(sock, laddr, SCTP_BINDX_ADD_ADDR) // error EADDRINUSE "Address already in use" may occur if resource (source IP and Port) is occupied
 		if err != nil {
 			return nil, err
 		}
