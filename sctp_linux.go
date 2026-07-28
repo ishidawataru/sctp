@@ -104,7 +104,7 @@ func (c *SCTPConn) SCTPWrite(b []byte, info *SndRcvInfo) (int, error) {
 		hdr.SetLen(syscall.CmsgSpace(len(cmsgBuf)))
 		cbuf = append(toBuf(hdr), cmsgBuf...)
 	}
-	return syscall.SendmsgN(c.fd(), b, cbuf, nil, 0)
+	return syscall.SendmsgN(c.fd(), b, cbuf, nil, syscall.MSG_DONTWAIT)
 }
 
 func parseSndRcvInfo(b []byte) (*SndRcvInfo, error) {
