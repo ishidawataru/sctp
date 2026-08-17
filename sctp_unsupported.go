@@ -22,6 +22,7 @@ import (
 	"os"
 	"runtime"
 	"syscall"
+	"time"
 )
 
 var ErrUnsupported = errors.New("SCTP is unsupported on " + runtime.GOOS + "/" + runtime.GOARCH)
@@ -84,6 +85,10 @@ func (ln *SCTPListener) Accept() (net.Conn, error) {
 
 func (ln *SCTPListener) AcceptSCTP() (*SCTPConn, error) {
 	return nil, ErrUnsupported
+}
+
+func (ln *SCTPListener) SetAcceptTimeout(d time.Duration) error {
+	return ErrUnsupported
 }
 
 func (ln *SCTPListener) Close() error {

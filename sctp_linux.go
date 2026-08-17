@@ -25,6 +25,7 @@ import (
 	"runtime"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -280,6 +281,19 @@ func FileListener(file *os.File) (*SCTPListener, error) {
 func (ln *SCTPListener) AcceptSCTP() (*SCTPConn, error) {
 	fd, _, err := syscall.Accept4(ln.fd, 0)
 	return NewSCTPConn(fd, ln.notificationHandler), err
+}
+
+// SetAcceptTimeout bounds how long AcceptSCTP may block in the accept4(2)
+// syscall by setting SO_RCVTIMEO on the listening socket. accept4 is called
+// directly rather than through the Go netpoller, so a goroutine parked there
+// is not woken by Close() - without a timeout it stays blocked, leaking the
+// goroutine and fd until process exit. A zero duration restores the default
+// blocking-forever behavior. On timeout, AcceptSCTP returns
+// syscall.EAGAIN/EWOULDBLOCK, which callers should treat as transient and
+// retry (e.g. after checking whether the listener was closed).
+func (ln *SCTPListener) SetAcceptTimeout(d time.Duration) error {
+	tv := syscall.NsecToTimeval(int64(d))
+	return syscall.SetsockoptTimeval(ln.fd, syscall.SOL_SOCKET, syscall.SO_RCVTIMEO, &tv)
 }
 
 // Accept waits for and returns the next connection connection to the listener.
