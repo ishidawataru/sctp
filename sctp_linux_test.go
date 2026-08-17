@@ -25,6 +25,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestNotificationHandlerAssignmentOnDialing(t *testing.T) {
@@ -152,6 +153,66 @@ func TestSyscallConn(t *testing.T) {
 			t.Errorf("Expected nil RawConn, got %v", raw)
 		}
 	})
+}
+
+func TestAcceptSCTPTimesOutWithoutPendingConnection(t *testing.T) {
+	network := "sctp"
+	addr := &SCTPAddr{IPAddrs: []net.IPAddr{{IP: net.IPv4(127, 0, 0, 1)}}, Port: 54322}
+
+	listener, err := ListenSCTP(network, addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	if err := listener.SetAcceptTimeout(50 * time.Millisecond); err != nil {
+		t.Fatalf("SetAcceptTimeout failed: %v", err)
+	}
+
+	start := time.Now()
+	_, err = listener.AcceptSCTP()
+	elapsed := time.Since(start)
+
+	if !errors.Is(err, syscall.EAGAIN) && !errors.Is(err, syscall.EWOULDBLOCK) {
+		t.Fatalf("expected EAGAIN/EWOULDBLOCK, got %v", err)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("AcceptSCTP blocked for %v; expected it to return shortly after the accept timeout", elapsed)
+	}
+}
+
+func TestAcceptSCTPUnblocksAfterCloseWithTimeout(t *testing.T) {
+	network := "sctp"
+	addr := &SCTPAddr{IPAddrs: []net.IPAddr{{IP: net.IPv4(127, 0, 0, 1)}}, Port: 54323}
+
+	listener, err := ListenSCTP(network, addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := listener.SetAcceptTimeout(50 * time.Millisecond); err != nil {
+		t.Fatalf("SetAcceptTimeout failed: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, acceptErr := listener.AcceptSCTP()
+		done <- acceptErr
+	}()
+
+	// Give the goroutine time to enter accept4 before closing, so this
+	// actually exercises the "already blocked in the syscall" case that a
+	// pre-loop isListenerClosed check cannot catch.
+	time.Sleep(20 * time.Millisecond)
+	listener.Close()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected AcceptSCTP to return an error after Close")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("AcceptSCTP goroutine did not unblock within 1s of Close(); accept4 leaked past Close")
+	}
 }
 
 func TestSCTPListenerNameFromFd(t *testing.T) {
