@@ -723,16 +723,17 @@ func (c *SCTPConn) PeelOff(id int) (*SCTPConn, error) {
 	return &SCTPConn{_fd: int32(param.sd)}, nil
 }
 
+// SetDeadline sets the read and write deadlines associated with the
+// connection. It is equivalent to calling both SetReadDeadline and
+// SetWriteDeadline.
+//
+// See SetReadDeadline for how deadlines are implemented and where the
+// implementation differs from the net.Conn contract.
 func (c *SCTPConn) SetDeadline(t time.Time) error {
-	return syscall.EOPNOTSUPP
-}
-
-func (c *SCTPConn) SetReadDeadline(t time.Time) error {
-	return syscall.EOPNOTSUPP
-}
-
-func (c *SCTPConn) SetWriteDeadline(t time.Time) error {
-	return syscall.EOPNOTSUPP
+	if err := c.SetReadDeadline(t); err != nil {
+		return err
+	}
+	return c.SetWriteDeadline(t)
 }
 
 type SCTPListener struct {
