@@ -25,6 +25,7 @@ import (
 	"runtime"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -364,4 +365,64 @@ func dialSCTPExtConfig(network string, laddr, raddr *SCTPAddr, options InitMsg, 
 		return nil, err
 	}
 	return NewSCTPConn(sock, notificationHandler), nil
+}
+
+// deadlineToTimeval converts an absolute deadline into the relative timeout
+// that SO_RCVTIMEO and SO_SNDTIMEO take.
+//
+// Two values are special and neither may be produced by accident:
+//
+//   - The zero time means "no deadline", which is a zero timeval — the value
+//     the options already hold, and which means "block indefinitely".
+//   - A deadline that has *already passed* must expire immediately. Converting
+//     it arithmetically yields a negative or zero duration, and a zero timeval
+//     means block forever, so the one case that must not block would be the
+//     one case that blocks hardest. It is clamped to the smallest timeval
+//     instead.
+func deadlineToTimeval(t time.Time) syscall.Timeval {
+	if t.IsZero() {
+		return syscall.NsecToTimeval(0)
+	}
+	if d := time.Until(t); d > 0 {
+		return syscall.NsecToTimeval(d.Nanoseconds())
+	}
+	return syscall.NsecToTimeval(int64(time.Microsecond))
+}
+
+// setDeadline applies t to one of SO_RCVTIMEO or SO_SNDTIMEO.
+//
+// The package's own setsockopt helper cannot be used: it hardcodes SOL_SCTP as
+// the level, and these two options live at SOL_SOCKET.
+func (c *SCTPConn) setDeadline(opt int, t time.Time) error {
+	tv := deadlineToTimeval(t)
+	if err := syscall.SetsockoptTimeval(c.fd(), syscall.SOL_SOCKET, opt, &tv); err != nil {
+		return os.NewSyscallError("setsockopt", err)
+	}
+	return nil
+}
+
+// SetReadDeadline sets the deadline for future Read and SCTPRead calls.
+//
+// A read that expires fails with syscall.EAGAIN, whose Timeout method reports
+// true — which is what net.Conn documents an expired deadline must do.
+//
+// ⚠️ Two documented differences from a net.Conn deadline, both inherent to
+// implementing this with SO_RCVTIMEO rather than with a poller:
+//
+//   - The deadline is converted to a relative timeout when it is set, and the
+//     kernel restarts that timeout on every read. A deadline set once and then
+//     read against repeatedly therefore bounds each read, not the sequence.
+//     Set the deadline before each read to get the net.Conn behaviour.
+//   - Setting a deadline does not interrupt a read that is already blocked in
+//     the kernel. The new value applies from the next call.
+//
+// A zero value for t removes the deadline.
+func (c *SCTPConn) SetReadDeadline(t time.Time) error {
+	return c.setDeadline(syscall.SO_RCVTIMEO, t)
+}
+
+// SetWriteDeadline sets the deadline for future Write and SCTPWrite calls. See
+// SetReadDeadline for the caveats; a write that expires fails the same way.
+func (c *SCTPConn) SetWriteDeadline(t time.Time) error {
+	return c.setDeadline(syscall.SO_SNDTIMEO, t)
 }
