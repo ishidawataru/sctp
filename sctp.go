@@ -222,10 +222,21 @@ type SndInfo struct {
 	AssocID int32
 }
 
+// GetAddrsOld mirrors struct sctp_getaddrs_old. Its Addrs field is a uintptr,
+// which does not keep the address buffer alive or follow it if it moves, so
+// this package no longer uses it (see getAddrsOld). Kept for compatibility.
 type GetAddrsOld struct {
 	AssocID int32
 	AddrNum int32
 	Addrs   uintptr
+}
+
+// getAddrsOld is GetAddrsOld with the buffer held as a real pointer, so the
+// garbage collector and stack copying both see it.
+type getAddrsOld struct {
+	assocID int32
+	addrNum int32
+	addrs   unsafe.Pointer
 }
 
 type NotificationHeader struct {
@@ -286,7 +297,7 @@ var ntohl = htonl
 // see https://tools.ietf.org/html/rfc4960#page-25
 func setInitOpts(fd int, options InitMsg) error {
 	optlen := unsafe.Sizeof(options)
-	_, _, err := setsockopt(fd, SCTP_INITMSG, uintptr(unsafe.Pointer(&options)), uintptr(optlen))
+	_, _, err := setsockopt(fd, SCTP_INITMSG, unsafe.Pointer(&options), optlen)
 	return err
 }
 
@@ -403,18 +414,18 @@ func ResolveSCTPAddr(network, addrs string) (*SCTPAddr, error) {
 
 func SCTPConnect(fd int, addr *SCTPAddr) (int, error) {
 	buf := addr.ToRawSockAddrBuf()
-	param := GetAddrsOld{
-		AddrNum: int32(len(buf)),
-		Addrs:   uintptr(uintptr(unsafe.Pointer(&buf[0]))),
+	param := getAddrsOld{
+		addrNum: int32(len(buf)),
+		addrs:   unsafe.Pointer(&buf[0]),
 	}
-	optlen := unsafe.Sizeof(param)
-	_, _, err := getsockopt(fd, SCTP_SOCKOPT_CONNECTX3, uintptr(unsafe.Pointer(&param)), uintptr(unsafe.Pointer(&optlen)))
+	optlen := uint32(unsafe.Sizeof(param))
+	_, _, err := getsockopt(fd, SCTP_SOCKOPT_CONNECTX3, unsafe.Pointer(&param), &optlen)
 	if err == nil {
-		return int(param.AssocID), nil
+		return int(param.assocID), nil
 	} else if err != syscall.ENOPROTOOPT {
 		return 0, err
 	}
-	r0, _, err := setsockopt(fd, SCTP_SOCKOPT_CONNECTX, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	r0, _, err := setsockopt(fd, SCTP_SOCKOPT_CONNECTX, unsafe.Pointer(&buf[0]), uintptr(len(buf)))
 	return int(r0), err
 }
 
@@ -430,7 +441,7 @@ func SCTPBind(fd int, addr *SCTPAddr, flags int) error {
 	}
 
 	buf := addr.ToRawSockAddrBuf()
-	_, _, err := setsockopt(fd, option, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	_, _, err := setsockopt(fd, option, unsafe.Pointer(&buf[0]), uintptr(len(buf)))
 	return err
 }
 
@@ -517,14 +528,14 @@ func (c *SCTPConn) SubscribeEvents(flags int) error {
 		SenderDry:       se,
 	}
 	optlen := unsafe.Sizeof(param)
-	_, _, err := setsockopt(c.fd(), SCTP_EVENTS, uintptr(unsafe.Pointer(&param)), uintptr(optlen))
+	_, _, err := setsockopt(c.fd(), SCTP_EVENTS, unsafe.Pointer(&param), optlen)
 	return err
 }
 
 func (c *SCTPConn) SubscribedEvents() (int, error) {
 	param := EventSubscribe{}
-	optlen := unsafe.Sizeof(param)
-	_, _, err := getsockopt(c.fd(), SCTP_EVENTS, uintptr(unsafe.Pointer(&param)), uintptr(unsafe.Pointer(&optlen)))
+	optlen := uint32(unsafe.Sizeof(param))
+	_, _, err := getsockopt(c.fd(), SCTP_EVENTS, unsafe.Pointer(&param), &optlen)
 	if err != nil {
 		return 0, err
 	}
@@ -564,53 +575,59 @@ func (c *SCTPConn) SubscribedEvents() (int, error) {
 
 func (c *SCTPConn) SetDefaultSentParam(info *SndRcvInfo) error {
 	optlen := unsafe.Sizeof(*info)
-	_, _, err := setsockopt(c.fd(), SCTP_DEFAULT_SENT_PARAM, uintptr(unsafe.Pointer(info)), uintptr(optlen))
+	_, _, err := setsockopt(c.fd(), SCTP_DEFAULT_SENT_PARAM, unsafe.Pointer(info), optlen)
 	return err
 }
 
 func (c *SCTPConn) GetDefaultSentParam() (*SndRcvInfo, error) {
 	info := &SndRcvInfo{}
-	optlen := unsafe.Sizeof(*info)
-	_, _, err := getsockopt(c.fd(), SCTP_DEFAULT_SENT_PARAM, uintptr(unsafe.Pointer(info)), uintptr(unsafe.Pointer(&optlen)))
+	optlen := uint32(unsafe.Sizeof(*info))
+	_, _, err := getsockopt(c.fd(), SCTP_DEFAULT_SENT_PARAM, unsafe.Pointer(info), &optlen)
 	return info, err
 }
 
 func (c *SCTPConn) SetSackTimer(timer *SackTimer) error { // SackTimer
 	optlen := unsafe.Sizeof(*timer)
-	_, _, err := setsockopt(c.fd(), SCTP_DELAYED_SACK, uintptr(unsafe.Pointer(timer)), optlen)
+	_, _, err := setsockopt(c.fd(), SCTP_DELAYED_SACK, unsafe.Pointer(timer), optlen)
 	return err
 }
 
 func (c *SCTPConn) GetSackTimer() (*SackTimer, error) { // SackTimer
 	timer := &SackTimer{}
-	optlen := unsafe.Sizeof(*timer)
-	_, _, err := getsockopt(
-		c.fd(),
-		SCTP_DELAYED_SACK,
-		uintptr(unsafe.Pointer(timer)),
-		uintptr(unsafe.Pointer(&optlen)),
-	)
+	optlen := uint32(unsafe.Sizeof(*timer))
+	_, _, err := getsockopt(c.fd(), SCTP_DELAYED_SACK, unsafe.Pointer(timer), &optlen)
 	return timer, err
 }
 
 func (c *SCTPConn) GetStatus() (*Status, error) { // Status
 	sctpStatus := &Status{}
-	optlen := unsafe.Sizeof(*sctpStatus)
-	_, _, err := getsockopt(
-		c.fd(),
-		SCTP_STATUS,
-		uintptr(unsafe.Pointer(sctpStatus)),
-		uintptr(unsafe.Pointer(&optlen)),
-	)
+	optlen := uint32(unsafe.Sizeof(*sctpStatus))
+	_, _, err := getsockopt(c.fd(), SCTP_STATUS, unsafe.Pointer(sctpStatus), &optlen)
 	return sctpStatus, err
 }
 
+// Getsockopt reads an SCTP-level socket option.
+//
+// Deprecated: optval and optlen are uintptrs, so the buffers they point to
+// are not kept in place for the call: Go guarantees that only when the
+// unsafe.Pointer-to-uintptr conversion is written in the syscall's own call
+// expression, and here it is written in the caller's. A stack buffer can move
+// before the syscall runs, and the kernel then writes freed memory. Use
+// SyscallConn and make the syscall inside syscall.RawConn.Control, with the
+// conversions in the syscall expression, or a typed call from
+// golang.org/x/sys/unix (for example unix.GetsockoptInt).
 func (c *SCTPConn) Getsockopt(optname, optval, optlen uintptr) (uintptr, uintptr, error) {
-	return getsockopt(c.fd(), optname, optval, optlen)
+	return rawGetsockopt(c.fd(), optname, optval, optlen)
 }
 
+// Setsockopt sets an SCTP-level socket option.
+//
+// Deprecated: optval is a uintptr and has the same defect as Getsockopt's;
+// the kernel can read freed memory. Use SyscallConn with
+// syscall.RawConn.Control, or a typed call from golang.org/x/sys/unix (for
+// example unix.SetsockoptInt(fd, unix.IPPROTO_SCTP, unix.SCTP_NODELAY, 1)).
 func (c *SCTPConn) Setsockopt(optname, optval, optlen uintptr) (uintptr, uintptr, error) {
-	return setsockopt(c.fd(), optname, optval, optlen)
+	return rawSetsockopt(c.fd(), optname, optval, optlen)
 }
 
 func resolveFromRawAddr(ptr unsafe.Pointer, n int) (*SCTPAddr, error) {
@@ -658,8 +675,8 @@ func sctpGetAddrs(fd, id, optname int) (*SCTPAddr, error) {
 	param := getaddrs{
 		assocId: int32(id),
 	}
-	optlen := unsafe.Sizeof(param)
-	_, _, err := getsockopt(fd, uintptr(optname), uintptr(unsafe.Pointer(&param)), uintptr(unsafe.Pointer(&optlen)))
+	optlen := uint32(unsafe.Sizeof(param))
+	_, _, err := getsockopt(fd, uintptr(optname), unsafe.Pointer(&param), &optlen)
 	if err != nil {
 		return nil, err
 	}
@@ -675,8 +692,8 @@ func (c *SCTPConn) SCTPGetPrimaryPeerAddr() (*SCTPAddr, error) {
 	param := sctpGetSetPrim{
 		assocId: int32(0),
 	}
-	optlen := unsafe.Sizeof(param)
-	_, _, err := getsockopt(c.fd(), SCTP_PRIMARY_ADDR, uintptr(unsafe.Pointer(&param)), uintptr(unsafe.Pointer(&optlen)))
+	optlen := uint32(unsafe.Sizeof(param))
+	_, _, err := getsockopt(c.fd(), SCTP_PRIMARY_ADDR, unsafe.Pointer(&param), &optlen)
 	if err != nil {
 		return nil, err
 	}
@@ -715,8 +732,8 @@ func (c *SCTPConn) PeelOff(id int) (*SCTPConn, error) {
 	param := peeloffArg{
 		assocId: int32(id),
 	}
-	optlen := unsafe.Sizeof(param)
-	_, _, err := getsockopt(c.fd(), SCTP_SOCKOPT_PEELOFF, uintptr(unsafe.Pointer(&param)), uintptr(unsafe.Pointer(&optlen)))
+	optlen := uint32(unsafe.Sizeof(param))
+	_, _, err := getsockopt(c.fd(), SCTP_SOCKOPT_PEELOFF, unsafe.Pointer(&param), &optlen)
 	if err != nil {
 		return nil, err
 	}

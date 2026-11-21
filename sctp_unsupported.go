@@ -22,15 +22,24 @@ import (
 	"os"
 	"runtime"
 	"syscall"
+	"unsafe"
 )
 
 var ErrUnsupported = errors.New("SCTP is unsupported on " + runtime.GOOS + "/" + runtime.GOARCH)
 
-func setsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, error) {
+func setsockopt(fd int, optname uintptr, optval unsafe.Pointer, optlen uintptr) (uintptr, uintptr, error) {
 	return 0, 0, ErrUnsupported
 }
 
-func getsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, error) {
+func getsockopt(fd int, optname uintptr, optval unsafe.Pointer, optlen *uint32) (uintptr, uintptr, error) {
+	return 0, 0, ErrUnsupported
+}
+
+func rawSetsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, error) {
+	return 0, 0, ErrUnsupported
+}
+
+func rawGetsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, error) {
 	return 0, 0, ErrUnsupported
 }
 

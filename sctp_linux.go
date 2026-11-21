@@ -28,8 +28,51 @@ import (
 	"unsafe"
 )
 
-func setsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, error) {
+// setsockopt and getsockopt take the option buffer as an unsafe.Pointer and
+// convert it to uintptr inside the syscall.Syscall6 call expression itself.
+// That is the only form in which Go guarantees the buffer stays where it is
+// until the syscall returns (rule 4 of the unsafe.Pointer documentation).
+// A pointer handed down as a uintptr through another Go function is a plain
+// integer: if the goroutine stack grows on the way (the buffers here are
+// usually stack variables), the buffer is moved and the kernel reads or
+// writes the old, freed stack. golang.org/x/sys/unix uses the same shape.
+//
+// optlen is a real socklen_t (uint32), so the kernel reads and writes exactly
+// the 4 bytes it expects, on big-endian platforms as well.
+func setsockopt(fd int, optname uintptr, optval unsafe.Pointer, optlen uintptr) (uintptr, uintptr, error) {
 	// FIXME: syscall.SYS_SETSOCKOPT is undefined on 386
+	r0, r1, errno := syscall.Syscall6(syscall.SYS_SETSOCKOPT,
+		uintptr(fd),
+		SOL_SCTP,
+		optname,
+		uintptr(optval),
+		optlen,
+		0)
+	if errno != 0 {
+		return r0, r1, errno
+	}
+	return r0, r1, nil
+}
+
+func getsockopt(fd int, optname uintptr, optval unsafe.Pointer, optlen *uint32) (uintptr, uintptr, error) {
+	// FIXME: syscall.SYS_GETSOCKOPT is undefined on 386
+	r0, r1, errno := syscall.Syscall6(syscall.SYS_GETSOCKOPT,
+		uintptr(fd),
+		SOL_SCTP,
+		optname,
+		uintptr(optval),
+		uintptr(unsafe.Pointer(optlen)),
+		0)
+	if errno != 0 {
+		return r0, r1, errno
+	}
+	return r0, r1, nil
+}
+
+// rawSetsockopt and rawGetsockopt back the deprecated exported
+// SCTPConn.Setsockopt and SCTPConn.Getsockopt, whose uintptr arguments cannot
+// be made safe here (see their documentation). Their behaviour is unchanged.
+func rawSetsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, error) {
 	r0, r1, errno := syscall.Syscall6(syscall.SYS_SETSOCKOPT,
 		uintptr(fd),
 		SOL_SCTP,
@@ -43,7 +86,7 @@ func setsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, erro
 	return r0, r1, nil
 }
 
-func getsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, error) {
+func rawGetsockopt(fd int, optname, optval, optlen uintptr) (uintptr, uintptr, error) {
 	if runtime.GOARCH == "s390x" {
 		optlen = uintptr(unsafe.Pointer(&optlen))
 	}
